@@ -116,7 +116,7 @@ function svgclick(e) {
 	const dim = document.getElementById('svg').getBoundingClientRect();
 	const x = e.clientX - dim.left;
 	let y = e.clientY - dim.top;
-	const range = Math.max(0, Math.abs(orig_y - y));
+	const range = Math.max(0.1, Math.abs(orig_y - y)) / 4;
 	y = orig_y;
 	const x0 = Math.floor(x / column_width) * column_width;
 	const w0 = x - x0;
@@ -126,7 +126,7 @@ function svgclick(e) {
 		freq = nearest_freq(freq);
 	}
 	const svg_lines = document.getElementById('lines');
-	const volume = Math.min(w0 / freq, 1);
+	const volume = Math.min(w0 / 100 / Math.pow(range, 1.2), 1);
 	start();
 
 	for (let i = 0; i < objects[active].length; i++) {
@@ -149,27 +149,23 @@ function svgclick(e) {
 		}
 	}
 
-	const real = new Float32Array(1024);
-	const imag = new Float32Array(1024);
-	const freq0 = freq - range;
-	const freq1 = freq + range;
-	const base_freq = (100 + 100 * Math.random()) / 256;
+	const real = new Float32Array(65536 * 16);
+	const imag = new Float32Array(65536 * 16);
+	const base_freq = c_hz / 32;
 	for (let i = 0; i < 100; i++) {
-		const j_freq = freq + range * (Math.random() - 0.5) * 2
-		const j = Math.round(j_freq / base_freq);
-		if (j >= 0 && j < 1024) {
-			if (Math.random() < 0.5) {
-				real[j] += Math.random() - 0.5;
-			} else {
-				imag[j] += Math.random() - 0.5;
-			}
-		}
+		real[i] = Math.random() - 0.5;
+		imag[i] = Math.random() - 0.5;
 	}
 	console.log(real,imag);
 	const periodic_wave = ctx.createPeriodicWave(real,imag);
 
 	const osc = ctx.createOscillator();
 	osc.setPeriodicWave(periodic_wave);
+
+	const bandpass = ctx.createBiquadFilter();
+	bandpass.type = 'bandpass';
+	bandpass.Q.setValueAtTime(10 / range, ctx.currentTime);
+	bandpass.frequency.setValueAtTime(freq, ctx.currentTime);
 
 	const gain = ctx.createGain();
 	gain.gain.setValueAtTime(volume, ctx.currentTime);
@@ -198,7 +194,8 @@ function svgclick(e) {
 		gain,
 		lines
 	});
-	osc.connect(gain);
+	osc.connect(bandpass);
+	bandpass.connect(gain);
 	gain.connect(ctx.destination);
 }
 
