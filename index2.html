@@ -7,7 +7,8 @@
 let ctx = undefined;
 const width = 1500;
 const height = 800;
-const objects = [];
+let active = 0;
+const objects = [[],[],[],[]];
 const c_hz = 261.6255653006;
 
 function freq_to_y(freq) {
@@ -122,6 +123,28 @@ function stop() {
 	}
 }
 
+function switc(n) {
+	if (active === n) {
+		return;
+	}
+	const svg_lines = document.getElementById('lines');
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
+		obj.gain.disconnect();
+		for (const line of obj.lines) {
+			svg_lines.removeChild(line);
+		}
+	}
+	active = n;
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
+		obj.gain.connect(ctx.destination);
+		for (const line of obj.lines) {
+			svg_lines.appendChild(line);
+		}
+	}
+}
+
 function svgclick(e) {
 	const dim = document.getElementById('svg').getBoundingClientRect();
 	const x = e.clientX - dim.left;
@@ -131,14 +154,14 @@ function svgclick(e) {
 	const volume = Math.min(x / freq / 10, 1);
 	start();
 
-	for (let i = 0; i < objects.length; i++) {
-		const obj = objects[i];
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
 		if (Math.abs(obj.freq - freq) < 1) {
 	      		if (Math.abs(obj.x - x) < 10) {
 				obj.osc.stop();
 				obj.osc.disconnect();
 				obj.gain.disconnect();
-				objects.splice(i, 1);
+				objects[active].splice(i, 1);
 				for (const line of obj.lines) {
 					svg_lines.removeChild(line);
 				}
@@ -169,7 +192,7 @@ function svgclick(e) {
 		svg_lines.appendChild(line);
 		lines.push(line);
 	}
-	objects.push({
+	objects[active].push({
 		x,
 		y,
 		freq,
@@ -186,7 +209,10 @@ window.onload = draw_svg_background;
 	</script>
 	</head>
 	<body>
-		<input type="button" onclick="stop()" value="Stop">
+		<input type="button" onclick="switc(0)" value="0">
+		<input type="button" onclick="switc(1)" value="1">
+		<input type="button" onclick="switc(2)" value="2">
+		<input type="button" onclick="switc(3)" value="3">
 		<br>
 		<svg id="svg" width="1500" height="800" onclick="svgclick(event)">
 			<g id="bg"></g>
