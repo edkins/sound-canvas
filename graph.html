@@ -1,0 +1,308 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+		<script src="https://d3js.org/d3.v5.min.js"></script>
+	<script>
+'use strict';
+
+const width = 600;
+const height = 600;
+let simulation = undefined;
+let ctx = undefined;
+const nodes = [];
+const links = [];
+const tonic_hz = 261.6255653006;
+
+function continue_sim() {
+	if (simulation !== undefined) {
+		simulation.stop();
+	}
+	simulation = d3.forceSimulation(nodes)
+		.force('link', d3.forceLink(links).id(d => d.id).strength(d => d.strength).distance(200))
+		.force('charge', d3.forceManyBody());
+
+	simulation.on('tick', () => {
+		d3.select('#links')
+			.selectAll('line')
+			.data(links, d => d.id)
+			.join('line')
+			.attr('stroke','#999')
+			.attr('stroke-width', 1)
+			.attr('stroke-opacity', d => (d.source.instantiated || d.target.instantiated) ? 1 : 0.1)
+			.attr('x1', d => d.source.x)
+			.attr('y1', d => d.source.y)
+			.attr('x2', d => d.target.x)
+			.attr('y2', d => d.target.y);
+
+		d3.select('#nodes')
+			.selectAll('circle')
+			.data(nodes, d => d.id)
+			.join('circle')
+			.attr('r', 15)
+			.call(drag(simulation))
+			.on('click', d => instantiate_node(d.id, d.x, d.y))
+			.attr('fill', d => d.instantiated ? '#f00' : '#ccc')
+			.attr('cx', d => d.x)
+			.attr('cy', d => d.y);
+
+		d3.select('#labels')
+			.selectAll('text')
+			.data(nodes, d => d.id)
+			.join('text')
+			.attr('x', d => d.x)
+			.attr('y', d => d.y)
+			.text(d => d.id);
+	});
+}
+
+function start() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+	}
+}
+
+function drag(simulation) {
+	function dragstarted(d) {
+		simulation.alphaTarget(0.3).restart();
+	}
+
+	function dragged(d) {
+		d.fx = d3.event.x;
+		d.fy = d3.event.y;
+	}
+
+	function dragended(d) {
+		simulation.alphaTarget(0);
+		d.fx = null;
+		d.fy = null;
+	}
+
+	return d3.drag()
+		.on('start', dragstarted)
+		.on('drag', dragged)
+		.on('end', dragended);
+}
+
+function tonic() {
+	return '1/1';
+}
+
+function suitable(id) {
+	let freq = calc_frequency(id);
+	return freq >= 100 && freq <= 2000;
+}
+
+function multiply(a, b) {
+	let a_pieces = a.split('/');
+	let b_pieces = b.split('/');
+	let ap = parseInt(a_pieces[0]);
+	let aq = parseInt(a_pieces[1]);
+	let bp = parseInt(b_pieces[0]);
+	let bq = parseInt(b_pieces[1]);
+	let p = ap * bp;
+	let q = aq * bq;
+
+	let i = 2;
+	while (i <= p) {
+		if (p % i === 0 && q % i === 0) {
+			p /= i;
+			q /= i;
+		} else {
+			i += 1;
+		}
+	}
+	return `${p}/${q}`;
+}
+
+function relationship(a, b) {
+	let a_pieces = a.split('/');
+	let b_pieces = b.split('/');
+	let ap = parseInt(a_pieces[0]);
+	let aq = parseInt(a_pieces[1]);
+	let bp = parseInt(b_pieces[0]);
+	let bq = parseInt(b_pieces[1]);
+	let p = ap * bq;
+	let q = aq * bp;
+
+	let i = 2;
+	while (i <= p) {
+		if (p % i === 0 && q % i === 0) {
+			p /= i;
+			q /= i;
+		} else {
+			i += 1;
+		}
+	}
+	return {
+		identical: a === b,
+		backwards: p < q,
+		name: `${p}/${q}`,
+		strength: rel_strength(p, q)
+	};
+}
+
+function rel_strength(p,q) {
+	if (p + q < 10) {
+		return 1 / (p * q);
+	} else {
+		return 0;
+	}
+}
+
+function find_node(id) {
+	for (const node of nodes) {
+		if (node.id === id) {
+			return node;
+		}
+	}
+	return undefined;
+}
+
+function remove_node(id) {
+	for (let i = 0; i < links.length; i++) {
+		if (links[i].source.id === id || links[i].target.id === id) {
+			links.splice(i,1);
+			i--;
+		}
+	}
+	for (let i = 0; i < nodes.length; i++) {
+		if (nodes[i].id === id) {
+			if (nodes[i].gain !== undefined) {
+				nodes[i].gain.disconnect();
+			}
+			if (nodes[i].osc !== undefined) {
+				nodes[i].osc.stop();
+				nodes[i].osc.disconnect();
+			}
+			nodes.splice(i,1);
+			break;
+		}
+	}
+}
+
+function add_osc(node) {
+	const freq = calc_frequency(node.id);
+	let gain = ctx.createGain();
+	gain.gain.setValueAtTime(Math.pow(100 / freq, 2.0), ctx.currentTime);
+
+	let osc = ctx.createOscillator();
+	osc.frequency.setValueAtTime(freq, ctx.currentTime);
+	osc.start();
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+	node.osc = osc;
+	node.gain = gain;
+}
+
+function add_node(id, x, y, instantiated) {
+	let node = find_node(id);
+	if (node !== undefined) {
+		node.to_remove = false;
+		if (instantiated && !node.instantiated) {
+			node.instantiated = true;
+			add_osc(node);
+		}
+	} else {
+		const newnode = {x,y,vx:0,vy:0,id,instantiated};
+		if (instantiated) {
+			add_osc(newnode);
+		}
+		nodes.push(newnode);
+
+		for (const node of nodes) {
+			const rel = relationship(node.id, newnode.id);
+			if (!rel.identical && rel.strength > 0) {
+				let source = undefined;
+				let target = undefined;
+				if (rel.backwards) {
+					source = node;
+					target = newnode;
+				} else {
+					source = newnode;
+					target = node;
+				}
+				const id = `${source.id}--${target.id}`;
+				const newlink = {
+					id,
+					source,
+					target,
+					strength: rel.strength
+				};
+				links.push(newlink);
+			}
+		}
+	}
+}
+
+function calc_frequency(id) {
+	let pieces = id.split('/');
+	return parseInt(pieces[0]) / parseInt(pieces[1]) * tonic_hz;
+}
+
+function instantiate_node(id, x, y) {
+	if (!suitable(id)) {
+		return;
+	}
+	add_node(id, x, y, true);
+	const to_remove = [];
+	for (const node of nodes) {
+		if (!node.instantiated) {
+			node.to_remove = true;
+			to_remove.push(node);
+		}
+	}
+	for (const rel of ['1/2','2/1','1/3','3/1','2/3','3/2']) {
+		const rel_id = multiply(id, rel);
+		if (suitable(rel_id)) {
+			add_node(rel_id, x + Math.random() * 10, y + Math.random() * 10, false);
+		}
+	}
+	for (const node of to_remove) {
+		if (node.to_remove) {
+			remove_node(node.id);
+		}
+	}
+	continue_sim();
+}
+
+function mousedown(e) {
+	const id = tonic();
+
+	start();
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	prev_x = x;
+	prev_y = y;
+
+	instantiate_node(id, x, y);
+}
+
+let prev_x = undefined;
+let prev_y = undefined;
+function mousemove(e) {
+	if (e.buttons) {
+		const dim = document.getElementById('svg').getBoundingClientRect();
+		const x = e.clientX - dim.left;
+		const y = e.clientY - dim.top;
+		const dx = x - prev_x;
+		const dy = y - prev_y;
+		for (const node of nodes) {
+			node.x += dx;
+			node.y += dy;
+		}
+		prev_x = x;
+		prev_y = y;
+	}
+}
+
+	</script>
+	</head>
+	<body>
+		<svg id="svg" onmousedown="mousedown(event)" onmousemove="mousemove(event)" width="600" height="600" style="background:#eee">
+			<g id="links"/>
+			<g id="nodes"/>
+			<g id="labels"/>
+		</svg>
+	</body>
+</html>
