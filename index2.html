@@ -1,0 +1,197 @@
+<html>
+	<head>
+	<meta charset="utf-8">
+	<script>
+'use strict';
+
+let ctx = undefined;
+const width = 1500;
+const height = 800;
+const objects = [];
+const c_hz = 261.6255653006;
+
+function freq_to_y(freq) {
+	return height - freq;
+}
+function y_to_freq(y) {
+	return height - y;
+}
+function nearest_freq(freq) {
+	const i = Math.round(freq / c_hz * 16);
+	return i * c_hz / 16;
+}
+
+function create_periodic_wave(ctx, decay, volume) {
+	let target = [];
+	const max = 2560;
+	for (let i = 0; i < max; i++) {
+		target.push(Math.exp(-decay * i / max));
+	}
+	let n = max;
+	let real = new Float32Array(n);
+	let imag = new Float32Array(n);
+	for (let j = 0; j < n; j++) {
+		let re = 0;
+		let im = 0;
+		for (let i = 0; i < max; i++) {
+			re += Math.cos(2 * Math.PI * i * j / max) * target[i];
+			im += Math.sin(2 * Math.PI * i * j / max) * target[i];
+		}
+		real[j] = re / max * volume;
+		imag[j] = im / max * volume;
+	}
+
+	periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
+	offset = real[0]/2;  // real[0] seems to get ignored?
+	return {periodic_wave, offset};
+}
+
+function name_freq(freq) {
+	const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+	let pitch = Math.log(freq / c_hz) / Math.log(2);
+	pitch = pitch - Math.floor(pitch);
+	pitch = pitch * 12;
+	let i = Math.round(pitch);
+	if (Math.abs(pitch - i) < 0.05) {
+		return names[i];
+	} else if (Math.abs(pitch - i) < 0.15) {
+		return `${names[i]}~`;
+	} else {
+		return '';
+	}
+}
+
+function draw_svg_background() {
+	const bg = document.getElementById('bg');
+	const letters = document.getElementById('letters');
+	const black_keys = [0,1,0,0,1,0,1,0,0,1,0,1];  // starting from A
+	for (let i = 1; i <= 48; i++) {
+		const freq = i * c_hz / 16;
+		const y = freq_to_y(freq);
+		const name = `${i} ${name_freq(freq)}`;
+		if (name !== '') {
+			const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+			text.setAttribute('x', 0);
+			text.setAttribute('y', y + 8);
+			text.setAttribute('font-family','sans-serif');
+			text.setAttribute('font-size',16);
+			text.textContent = name;
+			letters.appendChild(text);
+		}
+		if (true) {
+			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', 0);
+			line.setAttribute('y1', y);
+			line.setAttribute('x2', width);
+			line.setAttribute('y2', y);
+			line.setAttribute('stroke-width',1);
+			line.setAttribute('stroke','#e8e8e8');
+			bg.appendChild(line);
+		}
+	}
+}
+
+function start() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		/*let osc = ctx.createOscillator();
+		let shape = ctx.createOscillator();
+		let gain = ctx.createGain();
+
+		let {periodic_wave,offset} = create_periodic_wave(ctx, 5, 5);
+		console.log(offset);
+
+		shape.frequency.setValueAtTime(1, ctx.currentTime);
+		shape.setPeriodicWave(periodic_wave);
+		shape.connect(gain.gain);
+		shape.start();
+
+		gain.gain.setValueAtTime(offset, ctx.currentTime);
+		
+		osc.connect(gain);
+		osc.start();
+
+		gain.connect(ctx.destination);*/
+	}
+}
+
+function stop() {
+	if (ctx !== undefined) {
+		ctx.close();
+		ctx = undefined;
+	}
+}
+
+function svgclick(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	const freq = nearest_freq(y_to_freq(y));
+	const svg_lines = document.getElementById('lines');
+	const volume = Math.min(x / freq / 10, 1);
+	start();
+
+	for (let i = 0; i < objects.length; i++) {
+		const obj = objects[i];
+		if (Math.abs(obj.freq - freq) < 1) {
+	      		if (Math.abs(obj.x - x) < 10) {
+				obj.osc.stop();
+				obj.osc.disconnect();
+				obj.gain.disconnect();
+				objects.splice(i, 1);
+				for (const line of obj.lines) {
+					svg_lines.removeChild(line);
+				}
+	      		} else {
+	      			obj.gain.gain.setValueAtTime(volume, ctx.currentTime);
+	      			obj.lines[0].setAttribute('x2', x);
+	      			obj.x = x;
+	      		}
+			return;
+		}
+	}
+
+	const osc = ctx.createOscillator();
+	const gain = ctx.createGain();
+	gain.gain.setValueAtTime(volume, ctx.currentTime);
+	osc.frequency.setValueAtTime(freq, ctx.currentTime);
+	osc.start();
+	const lines = [];
+	for (let i = 1; i <= 1; i++) {
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+		const ly = freq_to_y(freq * i);
+		line.setAttribute('x1', 0);
+		line.setAttribute('y1', ly);
+		line.setAttribute('x2', (i === 1) ? x : width);
+		line.setAttribute('y2', ly);
+		line.setAttribute('stroke-width',1);
+		line.setAttribute('stroke',(i === 1) ? '#ff0000' : '#ffcccc');
+		svg_lines.appendChild(line);
+		lines.push(line);
+	}
+	objects.push({
+		x,
+		y,
+		freq,
+		osc,
+		gain,
+		lines
+	});
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+}
+
+window.onload = draw_svg_background;
+
+	</script>
+	</head>
+	<body>
+		<input type="button" onclick="stop()" value="Stop">
+		<br>
+		<svg id="svg" width="1500" height="800" onclick="svgclick(event)">
+			<g id="bg"></g>
+			<g id="letters"></g>
+			<g id="lines"></g>
+		</svg>
+	</body>
+</html>
