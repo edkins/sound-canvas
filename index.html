@@ -2,8 +2,19 @@
 	<head>
 	<meta charset="utf-8">
 	<script>
+'use strict';
 
 let ctx = undefined;
+const width = 1500;
+const height = 800;
+const objects = [];
+
+function freq_to_y(freq) {
+	return height - 300 * Math.log(freq / 200);
+}
+function y_to_freq(y) {
+	return Math.exp((height - y) / 300) * 200;
+}
 
 function create_periodic_wave(ctx, decay, volume) {
 	let target = [];
@@ -30,10 +41,54 @@ function create_periodic_wave(ctx, decay, volume) {
 	return {periodic_wave, offset};
 }
 
+function draw_svg_background() {
+	const bg = document.getElementById('bg');
+	const letters = document.getElementById('letters');
+	const black_keys = [0,1,0,0,1,0,1,0,0,1,0,1];  // starting from A
+	const names = ['A','','B','C','','D','','E','F','','G',''];
+	for (let i = -12; i <= 36; i++) {   // semitone number relative to A
+		const freq0 = Math.pow(2, (i - 0.5) / 12) * 440;  // A is 440 hz. Subtract 0.5 because we're drawing the lines *between* the keys
+		const freq1 = Math.pow(2, (i + 0.5) / 12) * 440;
+		const black = black_keys[((i % 12) + 12) % 12];
+		const next_black = black_keys[((i % 12) + 13) % 12];
+		const name = names[((i % 12) + 12) % 12];
+		const y0 = freq_to_y(freq0);
+		const y1 = freq_to_y(freq1);
+		if (black) {
+			const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+			rect.setAttribute('x', 0);
+			rect.setAttribute('y', y1);
+			rect.setAttribute('width', width);
+			rect.setAttribute('height', y0 - y1);
+			rect.setAttribute('fill', '#f4f4f4');
+			bg.appendChild(rect);
+		}
+		if (name !== '') {
+			const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+			text.setAttribute('x', 0);
+			text.setAttribute('y', (y0 + y1) / 2 + 8);
+			text.setAttribute('font-family','sans-serif');
+			text.setAttribute('font-size',16);
+			text.textContent = name;
+			letters.appendChild(text);
+		}
+		if (!black && !next_black) {
+			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', 0);
+			line.setAttribute('y1', y1);
+			line.setAttribute('x2', width);
+			line.setAttribute('y2', y1);
+			line.setAttribute('stroke-width',1);
+			line.setAttribute('stroke','#e8e8e8');
+			bg.appendChild(line);
+		}
+	}
+}
+
 function start() {
 	if (ctx === undefined) {
 		ctx = new AudioContext();
-		let osc = ctx.createOscillator();
+		/*let osc = ctx.createOscillator();
 		let shape = ctx.createOscillator();
 		let gain = ctx.createGain();
 
@@ -50,13 +105,80 @@ function start() {
 		osc.connect(gain);
 		osc.start();
 
-		gain.connect(ctx.destination);
+		gain.connect(ctx.destination);*/
 	}
 }
+
+function stop() {
+	if (ctx !== undefined) {
+		ctx.close();
+		ctx = undefined;
+	}
+}
+
+function svgclick(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	const freq = y_to_freq(y);
+	const svg_lines = document.getElementById('lines');
+	start();
+
+	for (let i = 0; i < objects.length; i++) {
+		const obj = objects[i];
+		if (Math.abs(obj.y - y) < 2) {
+			obj.osc.stop();
+			obj.osc.disconnect();
+			obj.gain.disconnect();
+			objects.splice(i, 1);
+			for (const line of obj.lines) {
+				svg_lines.removeChild(line);
+			}
+			return;
+		}
+	}
+
+	const osc = ctx.createOscillator();
+	const gain = ctx.createGain();
+	gain.gain.setValueAtTime(Math.pow(100 / freq, 2.0), ctx.currentTime);
+	osc.frequency.setValueAtTime(freq, ctx.currentTime);
+	osc.start();
+	const lines = [];
+	for (let i = 1; i <= 5; i++) {
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+		const ly = freq_to_y(freq * i);
+		line.setAttribute('x1', 0);
+		line.setAttribute('y1', ly);
+		line.setAttribute('x2', width);
+		line.setAttribute('y2', ly);
+		line.setAttribute('stroke-width',1);
+		line.setAttribute('stroke',(i === 1) ? '#ff0000' : '#ffcccc');
+		svg_lines.appendChild(line);
+		lines.push(line);
+	}
+	objects.push({
+		x,
+		y,
+		freq,
+		osc,
+		gain,
+		lines
+	});
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+}
+
+window.onload = draw_svg_background;
 
 	</script>
 	</head>
 	<body>
-		<input type="button" onclick="start()" value="Start">
+		<input type="button" onclick="stop()" value="Stop">
+		<br>
+		<svg id="svg" width="1500" height="800" onclick="svgclick(event)">
+			<g id="bg"></g>
+			<g id="letters"></g>
+			<g id="lines"></g>
+		</svg>
 	</body>
 </html>
