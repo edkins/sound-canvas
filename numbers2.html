@@ -1,0 +1,115 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	<script>
+const c_hz = 261.6255653006;
+const step_hz = c_hz / 8;
+let ctx = undefined;
+let oscs = [undefined];
+let gains = [undefined];
+const max_i = 100;
+let volumes = new Float32Array(1 + max_i);
+let history = [];
+
+function radio_value(name) {
+	const radios = document.getElementsByName(name);
+	for (let i = 0; i < radios.length; i++) {
+		if (radios[i].checked) {
+			return parseFloat(radios[i].value);
+		}
+	}
+	return 0;
+}
+
+function has_higher_prime(n) {
+	while (n % 2 === 0) {
+		n /= 2;
+	}
+	while (n % 3 === 0) {
+		n /= 2;
+	}
+	while (n % 5 === 0) {
+		n /= 2;
+	}
+	return n > 1;
+}
+
+function play() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		for (let i = 1; i < max_i; i++) {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			const freq = i * step_hz;
+
+			oscs.push(osc);
+			gains.push(gain);
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+			osc.connect(gain);
+			osc.frequency.setValueAtTime(freq, ctx.currentTime);
+			osc.start();
+			gain.connect(ctx.destination);
+			volumes[i] = (i === 8) ? 1 : 0;
+		}
+	}
+	redo_gains();
+}
+
+function redo_gains() {
+	let total_volume = 0.001;
+	for (let i = 1; i < max_i; i++) {
+		total_volume += Math.abs(volumes[i]);
+	}
+	for (let i = 1; i < max_i; i++) {
+		gains[i].gain.setValueAtTime(volumes[i] / total_volume / 4, ctx.currentTime);
+	}
+}
+
+let last_x = undefined;
+let last_y = undefined;
+
+function raise_volumes_of_multiple_shrink_other(m, dy) {
+	for (let i = 1; i < max_i; i++) {
+		const freq = i * step_hz;
+		if (i % m === 0) {
+			volumes[i] = Math.max(0, Math.min(1, volumes[i] + dy / freq));
+		} else {
+			volumes[i] = Math.max(0, Math.min(1, volumes[i] - dy / freq));
+		}
+	}
+}
+
+function svg_mm(e) {
+	if (e.buttons && last_x !== undefined) {
+		const dy = e.clientY - last_y;
+		const dx = Math.max(0, e.clientX - last_x);
+		if (dy >= 0) {
+			const new_volumes = new Float32Array(1 + max_i);
+			new_volumes.set(volumes);
+			history.push(volumes);
+			volumes = new_volumes;
+
+			if (dy > 0) {
+				raise_volumes_of_multiple_shrink_other(8, dy);
+			}
+			if (dx > 0) {
+				raise_volumes_of_multiple_shrink_other(6, dx);
+			}
+		} else if (history.length > 0) {
+			volumes = history.pop();
+		}
+		redo_gains();
+	}
+	last_x = e.clientX;
+	last_y = e.clientY;
+}
+
+</script>
+	</head>
+	<body>
+		<input type="button" value="Play" onclick="play()">
+		<br>
+		<svg width="600" height="600" style="background:#eee" onmousedown="play()" onmousemove="svg_mm(event)">
+		</svg>
+	</body>
+</html>

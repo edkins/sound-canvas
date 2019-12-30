@@ -1,0 +1,203 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	<script>
+const c_hz = 261.6255653006;
+const step_hz = c_hz / 32;
+let ctx = undefined;
+let oscs = [undefined];
+let gains = [undefined];
+const max_i = 100;
+
+function radio_value(name) {
+	const radios = document.getElementsByName(name);
+	for (let i = 0; i < radios.length; i++) {
+		if (radios[i].checked) {
+			return parseFloat(radios[i].value);
+		}
+	}
+	return 0;
+}
+
+function has_higher_prime(n) {
+	while (n % 2 === 0) {
+		n /= 2;
+	}
+	while (n % 3 === 0) {
+		n /= 2;
+	}
+	while (n % 5 === 0) {
+		n /= 2;
+	}
+	return n > 1;
+}
+
+function play() {
+	const multiplier = Math.abs(parseInt(document.getElementById('multiplier').value));
+	const min_freq = parseInt(document.getElementById('min_freq').value);
+	const max_freq = parseInt(document.getElementById('max_freq').value);
+	const twos = radio_value('twos');
+	const threes = radio_value('threes');
+	const fives = radio_value('fives');
+	const highers = radio_value('highers');
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		for (let i = 1; i < max_i; i++) {
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+
+			oscs.push(osc);
+			gains.push(gain);
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+			osc.connect(gain);
+			osc.start();
+			gain.connect(ctx.destination);
+		}
+	}
+	let volumes = new Float32Array(101);
+	let total_volume = 0.001;
+	for (let i = 1; i < max_i; i++) {
+		const freq = multiplier * i * step_hz;
+		if (freq >= min_freq && freq <= max_freq) {
+			let volume = 1 / Math.pow(freq, 1.5);
+			if (i % 2 === 0) {
+				volume *= twos;
+			}
+			if (i % 3 === 0) {
+				volume *= threes;
+			}
+			if (i % 5 === 0) {
+				volume *= fives;
+			}
+			if (has_higher_prime(i)) {
+				volume *= highers;
+			}
+			volumes[i] = volume;
+			total_volume += Math.abs(volume);
+			oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
+		} else {
+			volumes[i] = 0;
+		}
+	}
+	for (let i = 1; i < max_i; i++) {
+		gains[i].gain.setValueAtTime(volumes[i] / total_volume / 5, ctx.currentTime);
+	}
+}
+
+</script>
+	</head>
+	<body>
+		<table>
+			<tr>
+				<td>
+					Multiplier
+				</td>
+				<td colspan="4">
+					<input type="text" id="multiplier" value="4">
+				</td>
+			</tr>
+			<tr>
+				<td>
+					Min freq
+				</td>
+				<td colspan="4">
+					<input type="text" id="min_freq" value="250">
+				</td>
+			</tr>
+			<tr>
+				<td>
+					Max freq
+				</td>
+				<td colspan="4">
+				<input type="text" id="max_freq" value="4000">
+			</tr>
+			<tr>
+				<td>
+					2's
+				</td>
+				<td>
+				<input type="radio" name="twos" checked="true" value="1.0">
+				Normal
+				</td>
+				<td>
+				<input type="radio" name="twos" checked="false" value="4.0">
+				Emphasize
+				</td>
+				<td>
+				<input type="radio" name="twos" checked="false" value="0.25">
+				Quieten
+				</td>
+				<td>
+				<input type="radio" name="twos" checked="false" value="0.0">
+				Silence
+				</td>
+			</tr>
+			<tr>
+				<td>
+					3's
+				</td>
+				<td>
+				<input type="radio" name="threes" checked="true" value="1.0">
+				Normal
+				</td>
+				<td>
+				<input type="radio" name="threes" checked="false" value="4.0">
+				Emphasize
+				</td>
+				<td>
+				<input type="radio" name="threes" checked="false" value="0.25">
+				Quieten
+				</td>
+				<td>
+				<input type="radio" name="threes" checked="false" value="0.0">
+				Silence
+				</td>
+			</tr>
+			<tr>
+				<td>
+					5's
+				</td>
+				<td>
+				<input type="radio" name="fives" checked="true" value="1.0">
+				Normal
+				</td>
+				<td>
+				<input type="radio" name="fives" checked="false" value="4.0">
+				Emphasize
+				</td>
+				<td>
+				<input type="radio" name="fives" checked="false" value="0.25">
+				Quieten
+				</td>
+				<td>
+				<input type="radio" name="fives" checked="false" value="0.0">
+				Silence
+				</td>
+			</tr>
+			<tr>
+				<td>
+					Higher primes
+				</td>
+				<td>
+				<input type="radio" name="highers" checked="true" value="1.0">
+				Normal
+				</td>
+				<td>
+				<input type="radio" name="highers" checked="false" value="4.0">
+				Emphasize
+				</td>
+				<td>
+				<input type="radio" name="highers" checked="false" value="0.25">
+				Quieten
+				</td>
+				<td>
+				<input type="radio" name="highers" checked="false" value="0.0">
+				Silence
+				</td>
+			</tr>
+		</table>
+		<br>
+		<input type="button" value="Play" onclick="play()">
+
+	</body>
+</html>
