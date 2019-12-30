@@ -13,12 +13,22 @@ const nodes = [];
 const links = [];
 const tonic_hz = 261.6255653006;
 
+function edge_strength(d) {
+	if (d.source.instantiated && d.target.instantiated) {
+		return d.strength;
+	} else if (d.source.instantiated || d.target.instantiated) {
+		return d.strength / 8;
+	} else {
+		return d.strength / 8;
+	}
+}
+
 function continue_sim() {
 	if (simulation !== undefined) {
 		simulation.stop();
 	}
 	simulation = d3.forceSimulation(nodes)
-		.force('link', d3.forceLink(links).id(d => d.id).strength(d => d.strength).distance(200))
+		.force('link', d3.forceLink(links).id(d => d.id).strength(edge_strength).distance(200))
 		.force('charge', d3.forceManyBody());
 
 	simulation.on('tick', () => {

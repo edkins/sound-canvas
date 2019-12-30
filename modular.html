@@ -1,0 +1,122 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	<script>
+'use strict';
+
+const tonic_hz = 261.6255653006;
+let ctx = undefined;
+let all_circles = [];
+
+function set_osc(p,q) {
+	const freq = p / q * tonic_hz;
+
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+	}
+	
+	for (const circle of all_circles) {
+		let cp = parseInt(circle.dataset.p);
+		let cq = parseInt(circle.dataset.q);
+		if (cp === p && cq === q) {
+			if (circle.gain !== undefined) {
+				circle.gain.disconnect();
+				circle.osc.stop();
+				circle.osc.disconnect();
+				circle.gain = undefined;
+				circle.osc = undefined;
+				return;
+			}
+
+			circle.gain = ctx.createGain();
+			circle.gain.gain.setValueAtTime(Math.pow(100 / freq, 1.0), ctx.currentTime);
+
+			circle.osc = ctx.createOscillator();
+			circle.osc.frequency.setValueAtTime(freq, ctx.currentTime);
+			circle.osc.start();
+			circle.osc.connect(circle.gain);
+			circle.gain.connect(ctx.destination);
+		}
+	}
+}
+
+function set_highlight(p,q) {
+	for (const circle of all_circles) {
+		let cp = parseInt(circle.dataset.p);
+		let cq = parseInt(circle.dataset.q);
+		let shadow = cp * q === 2 * cq * p;
+		if (cp === p && cq === q) {
+			circle.setAttribute('fill', '#88f');
+		} else if (circle.osc !== undefined && shadow) {
+			circle.setAttribute('fill', '#f8c');
+		} else if (circle.osc !== undefined) {
+			circle.setAttribute('fill', '#f88');
+		} else if (shadow) {
+			circle.setAttribute('fill', '#bbf');
+		} else {
+			circle.setAttribute('fill', '#eee');
+		}
+	}
+}
+
+function draw_circles(a,b,c,d) {
+	const circles = document.getElementById('circles');
+	const texts = document.getElementById('text');
+
+	const x0 = 1200 * a / b;
+	const x1 = 1200 * c / d;
+	const xmid = 1200 * (a + c) / (b + d);
+	const r = (x1 - x0) / 2;
+
+	const p = (a + c);
+	const q = (b + d) - (a + c);
+	if (r > 1.5) {
+		const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+		circle.setAttribute('r', r);
+		circle.setAttribute('cx', (x1 + x0) / 2);
+		circle.setAttribute('cy', 0);
+		circle.dataset.p = p;
+		circle.dataset.q = q;
+		circle.onclick = () => set_osc(p, q);
+		circle.onmouseover = () => set_highlight(p, q);
+		circles.appendChild(circle);
+		all_circles.push(circle);
+
+		draw_circles(a,b,a+c,b+d);
+		draw_circles(a+c,b+d,c,d);
+	}
+
+	if (xmid - x0 > 18 && x1 - xmid > 18) {
+		let text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', xmid);
+		text.setAttribute('y', 30);
+		text.setAttribute('fill','#f00');
+		text.setAttribute('stroke','none');
+		text.setAttribute('text-anchor','middle');
+		text.setAttribute('pointer-events','none');
+		text.textContent = p;
+		texts.appendChild(text);
+
+		text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', xmid);
+		text.setAttribute('y', 46);
+		text.setAttribute('fill','#f00');
+		text.setAttribute('stroke','none');
+		text.setAttribute('text-anchor','middle');
+		text.setAttribute('pointer-events','none');
+		text.textContent = q;
+		texts.appendChild(text);
+	}
+}
+
+window.onload = () => draw_circles(0,1,1,1);
+
+	</script>
+	</head>
+	<body>
+		<svg id="svg" width="1200" height="700" style="stroke:#000; fill:#eee">
+			<g id="circles"/>
+			<g id="text"/>
+		</svg>
+	</body>
+</html>
