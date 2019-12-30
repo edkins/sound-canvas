@@ -8,12 +8,14 @@ let ctx = undefined;
 const width = 1500;
 const height = 800;
 let active = 0;
-const objects = [[],[],[],[]];
-const f_hz = 349.22823143300;
+const c_hz = 261.6255653006;
+//const f_hz = 349.22823143300;
 const column_width = 500;
-const bg_lines = {};
-const min_freq = 20;
-const max_freq = 4500;
+const bg_lines = [undefined];
+const fg_lines = {};
+const oscs = [undefined]; // they start at 1
+const gains = [undefined];
+const max_i = 145;
 
 function freq_to_y(freq) {
 	return height - freq / 2;
@@ -22,16 +24,16 @@ function y_to_freq(y) {
 	return (height - y) * 2;
 }
 function nearest_freq(freq) {
-	const i = Math.round(freq / f_hz * 8);
-	return i * f_hz / 8;
+	const i = Math.round(freq / c_hz * 8);
+	return i * c_hz / 8;
 }
 function freq_to_i(freq) {
-	return Math.round(freq / f_hz * 8);
+	return Math.round(freq / c_hz * 8);
 }
 
 function name_freq(freq) {
-	const names = ['F','F#','G','G#','A','A#','B','C','C','C#','D','D#','E'];
-	let pitch = Math.log(freq / f_hz) / Math.log(2);
+	const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B','C'];
+	let pitch = Math.log(freq / c_hz) / Math.log(2);
 	pitch = pitch - Math.floor(pitch);
 	pitch = pitch * 12;
 	let i = Math.round(pitch);
@@ -47,11 +49,8 @@ function name_freq(freq) {
 function draw_svg_background() {
 	const bg = document.getElementById('bg');
 	const letters = document.getElementById('letters');
-	for (let i = 1; i <= 200; i++) {
-		const freq = i * f_hz / 8;
-		if (freq >= max_freq) {
-			continue;
-		}
+	for (let i = 1; i <= max_i; i++) {
+		const freq = i * c_hz / 8;
 		const y0 = freq_to_y(freq);
 		const y = ((y0 % height) + height) % height;
 		const x = (y - y0) / height * column_width;
@@ -65,17 +64,16 @@ function draw_svg_background() {
 			text.textContent = name;
 			letters.appendChild(text);
 		}
-		if (true) {
-			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-			line.setAttribute('x1', x);
-			line.setAttribute('y1', y);
-			line.setAttribute('x2', x + column_width - 20);
-			line.setAttribute('y2', y);
-			line.setAttribute('stroke-width',1);
-			line.setAttribute('stroke','#cccccc');
-			bg.appendChild(line);
-	      		bg_lines[i] = line;
-		}
+
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+		line.setAttribute('x1', x);
+		line.setAttribute('y1', y);
+		line.setAttribute('x2', x + column_width - 20);
+		line.setAttribute('y2', y);
+		line.setAttribute('stroke-width',1);
+		line.setAttribute('stroke','#cccccc');
+		bg.appendChild(line);
+		bg_lines.push(line);
 	}
 
 	for (let x = 0; x < 3; x++) {
@@ -94,6 +92,21 @@ function draw_svg_background() {
 function start() {
 	if (ctx === undefined) {
 		ctx = new AudioContext();
+		for (let i = 1; i <= max_i; i++) {
+			const osc = ctx.createOscillator();
+			const freq = i * c_hz / 8;
+			osc.frequency.setValueAtTime(freq, ctx.currentTime);
+			osc.start();
+
+			const gain = ctx.createGain();
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+
+			oscs.push(osc);
+			gains.push(gain);
+		}
 	}
 }
 
@@ -104,6 +117,7 @@ function stop() {
 	}
 }
 
+/*
 function switc(n) {
 	if (active === n) {
 		return;
@@ -125,6 +139,7 @@ function switc(n) {
 		}
 	}
 }
+*/
 
 let prev_y0 = undefined;
 function svgmove(e) {
@@ -143,24 +158,41 @@ function svgmove(e) {
 	}
 }
 
+function redo_gains() {
+	start();
+	for (let i = 1; i <= max_i; i++) {
+		let volume = 0;
+		const w1 = (bg_lines[i].getAttribute('x2') - bg_lines[i].getAttribute('x1')) - column_width / 2;
+		let visited = false;
+		for (let j = 1; j <= i; j++) {
+			if (i % j === 0) {
+				if (j in bg_lines && j in fg_lines) {
+					visited = true;
+				}
+			}
+		}
+		if (visited) {
+			const freq = i * c_hz / 8;
+			volume += w1 / freq / 40;
+			bg_lines[i].setAttribute('stroke','#ffcc44');
+		} else {
+			bg_lines[i].setAttribute('stroke','#cccccc');
+		}
+		gains[i].gain.setValueAtTime(volume, ctx.currentTime);
+	}
+}
+
 function set_volumes_between(y0, y1, w0) {
+	console.log(w0);
 	let freq0 = y_to_freq(y0);
 	let freq1 = y_to_freq(y1);
 
 	let index0 = freq_to_i(freq0);
 	let index1 = freq_to_i(freq1);
 	for (let index = Math.min(index0,index1); index <= Math.max(index0,index1); index++) {
-		bg_lines[index].setAttribute('x2', Math.max(column_width/2,w0));
-		const w1 = bg_lines[index].getAttribute('x2') - column_width / 2;
-		const freq = index * f_hz / 8;
-		const volume = Math.min(w1 / freq / 10, 1);
-		for (let i = 0; i < objects[active].length; i++) {
-			const obj = objects[active][i];
-			if (freq_to_i(obj.freq) === index) {
-				obj.gain.gain.setValueAtTime(volume, ctx.currentTime);
-			}
-		}
+		bg_lines[index].setAttribute('x2', parseInt(bg_lines[index].getAttribute('x1')) + Math.max(column_width/2,w0));
 	}
+	redo_gains();
 }
 
 function svgclick(e) {
@@ -172,6 +204,7 @@ function svgclick(e) {
 	const y0 = y - Math.floor(x / column_width) * height;
 	let freq = y_to_freq(y0);
 
+	freq = nearest_freq(freq);
 	let index = freq_to_i(freq);
 	if (w0 > column_width / 2) {
 		set_volumes_between(y0,y0,w0);
@@ -182,72 +215,39 @@ function svgclick(e) {
 	w0 = column_width / 2;
 	x = x0 + w0;
 
-	if (freq < min_freq) {
-		return;
-	}
-
-	if (e.buttons === 1) {
-		freq = nearest_freq(freq);
-	}
 	const svg_lines = document.getElementById('lines');
 	const w1 = bg_lines[index].getAttribute('x2') - column_width / 2;
 	const volume = Math.min(w1 / Math.pow(freq, 1.5), 1);
 	start();
 
-	// See if someone is adjusting something
-	for (let i = 0; i < objects[active].length; i++) {
-		const obj = objects[active][i];
-		if (Math.abs(obj.freq - freq) < 4) {
-	      		if (Math.abs(obj.x - x) < 10) {
-				obj.osc.stop();
-				obj.osc.disconnect();
-				obj.gain.disconnect();
-				objects[active].splice(i, 1);
-				for (const line of obj.lines) {
-					svg_lines.removeChild(line);
-				}
+	// See if someone is adjusting or removing something
+	for (let i in fg_lines) {
+		const line = fg_lines[i];
+		if (Math.abs(parseFloat(line.dataset.freq) - freq) < 4) {
+	      		if (Math.abs(line.getAttribute('x2') - x) < 10) {
+				svg_lines.removeChild(line);
+				delete fg_lines[i];
 	      		} else {
-	      			obj.gain.gain.setValueAtTime(volume, ctx.currentTime);
-	      			obj.lines[0].setAttribute('x2', x);
-	      			obj.x = x;
+	      			line.setAttribute('x2', x);
 	      		}
+			redo_gains();
 			return;
 		}
 	}
-
-	let mult = 1;
-	while (freq * mult < max_freq) { 
-		const freq1 = freq * mult;
-		const osc = ctx.createOscillator();
-		const gain = ctx.createGain();
-		gain.gain.setValueAtTime(volume, ctx.currentTime);
-		osc.frequency.setValueAtTime(freq1, ctx.currentTime);
-		osc.start();
-		const lines = [];
-		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-		const ly0 = freq_to_y(freq1);
-		const ly = ((ly0 % height) + height) % height;
-		const lx = (ly - ly0) / height * column_width;
-		line.setAttribute('x1', lx);
-		line.setAttribute('y1', ly);
-		line.setAttribute('x2', lx + column_width / 2);
-		line.setAttribute('y2', ly);
-		line.setAttribute('stroke-width',1);
-		line.setAttribute('stroke','#ff0000');
-		svg_lines.appendChild(line);
-		lines.push(line);
-		objects[active].push({
-			x,
-			y,
-			freq:freq1,
-			osc,
-			gain,
-			lines
-		});
-		osc.connect(gain);
-		gain.connect(ctx.destination);
-		mult++;
-	}
+	const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+	const ly0 = freq_to_y(freq);
+	const ly = ((ly0 % height) + height) % height;
+	const lx = (ly - ly0) / height * column_width;
+	line.setAttribute('x1', lx);
+	line.setAttribute('y1', ly);
+	line.setAttribute('x2', lx + column_width / 2);
+	line.setAttribute('y2', ly);
+	line.setAttribute('stroke-width',1);
+	line.setAttribute('stroke','#ff0000');
+	line.dataset.freq = freq;
+	svg_lines.appendChild(line);
+	fg_lines[index] = line;
+	redo_gains();
 }
 
 function svgup(e) {
