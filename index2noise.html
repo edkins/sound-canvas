@@ -1,0 +1,221 @@
+<html>
+	<head>
+	<meta charset="utf-8">
+	<script>
+'use strict';
+
+let ctx = undefined;
+const width = 1500;
+const height = 800;
+let active = 0;
+const objects = [[],[],[],[]];
+const c_hz = 261.6255653006;
+const column_width = 500;
+
+function freq_to_y(freq) {
+	return height - freq / 2;
+}
+function y_to_freq(y) {
+	return (height - y) * 2;
+}
+function nearest_freq(freq) {
+	const i = Math.round(freq / c_hz * 16);
+	return i * c_hz / 16;
+}
+
+function name_freq(freq) {
+	const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B','C'];
+	let pitch = Math.log(freq / c_hz) / Math.log(2);
+	pitch = pitch - Math.floor(pitch);
+	pitch = pitch * 12;
+	let i = Math.round(pitch);
+	if (Math.abs(pitch - i) < 0.05) {
+		return names[i];
+	} else if (Math.abs(pitch - i) < 0.15) {
+		return `${names[i]}~`;
+	} else {
+		return '';
+	}
+}
+
+function draw_svg_background() {
+	const bg = document.getElementById('bg');
+	const letters = document.getElementById('letters');
+	for (let i = 1; i <= 200; i++) {
+		const freq = i * c_hz / 8;
+		const y0 = freq_to_y(freq);
+		const y = ((y0 % height) + height) % height;
+		const x = (y - y0) / height * column_width;
+		const name = `${i} ${name_freq(freq)}`;
+		if (name !== '') {
+			const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+			text.setAttribute('x', x);
+			text.setAttribute('y', y + 8);
+			text.setAttribute('font-family','sans-serif');
+			text.setAttribute('font-size',16);
+			text.textContent = name;
+			letters.appendChild(text);
+		}
+		if (true) {
+			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x);
+			line.setAttribute('y1', y);
+			line.setAttribute('x2', x + column_width - 20);
+			line.setAttribute('y2', y);
+			line.setAttribute('stroke-width',1);
+			line.setAttribute('stroke','#e8e8e8');
+			bg.appendChild(line);
+		}
+	}
+}
+
+function start() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+	}
+}
+
+function stop() {
+	if (ctx !== undefined) {
+		ctx.close();
+		ctx = undefined;
+	}
+}
+
+function switc(n) {
+	if (active === n) {
+		return;
+	}
+	const svg_lines = document.getElementById('lines');
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
+		obj.gain.disconnect();
+		for (const line of obj.lines) {
+			svg_lines.removeChild(line);
+		}
+	}
+	active = n;
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
+		obj.gain.connect(ctx.destination);
+		for (const line of obj.lines) {
+			svg_lines.appendChild(line);
+		}
+	}
+}
+
+let orig_y = undefined;
+function svgdown(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	orig_y = y;
+}
+
+function svgclick(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	let y = e.clientY - dim.top;
+	const range = Math.max(0, Math.abs(orig_y - y));
+	y = orig_y;
+	const x0 = Math.floor(x / column_width) * column_width;
+	const w0 = x - x0;
+	const y0 = y - Math.floor(x / column_width) * height;
+	let freq = y_to_freq(y0);
+	if (e.buttons === 1 || true) {
+		freq = nearest_freq(freq);
+	}
+	const svg_lines = document.getElementById('lines');
+	const volume = Math.min(w0 / freq, 1);
+	start();
+
+	for (let i = 0; i < objects[active].length; i++) {
+		const obj = objects[active][i];
+		if (Math.abs(obj.freq - freq) < 4) {
+	      		if (Math.abs(obj.x - x) < 10) {
+				obj.osc.stop();
+				obj.osc.disconnect();
+				obj.gain.disconnect();
+				objects[active].splice(i, 1);
+				for (const line of obj.lines) {
+					svg_lines.removeChild(line);
+				}
+	      		} else {
+	      			obj.gain.gain.setValueAtTime(volume, ctx.currentTime);
+	      			obj.lines[0].setAttribute('x2', x);
+	      			obj.x = x;
+	      		}
+			return;
+		}
+	}
+
+	const real = new Float32Array(1024);
+	const imag = new Float32Array(1024);
+	const freq0 = freq - range;
+	const freq1 = freq + range;
+	const base_freq = (100 + 100 * Math.random()) / 256;
+	for (let i = 0; i < 100; i++) {
+		const j_freq = freq + range * (Math.random() - 0.5) * 2
+		const j = Math.round(j_freq / base_freq);
+		if (j >= 0 && j < 1024) {
+			if (Math.random() < 0.5) {
+				real[j] += Math.random() - 0.5;
+			} else {
+				imag[j] += Math.random() - 0.5;
+			}
+		}
+	}
+	console.log(real,imag);
+	const periodic_wave = ctx.createPeriodicWave(real,imag);
+
+	const osc = ctx.createOscillator();
+	osc.setPeriodicWave(periodic_wave);
+
+	const gain = ctx.createGain();
+	gain.gain.setValueAtTime(volume, ctx.currentTime);
+	osc.frequency.setValueAtTime(base_freq, ctx.currentTime);
+	osc.start();
+	const lines = [];
+	for (let i = 1; i <= 1; i++) {
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+		const ly0 = freq_to_y(freq * i);
+		const ly = ((ly0 % height) + height) % height;
+		line.setAttribute('x1', x0);
+		line.setAttribute('y1', ly);
+		line.setAttribute('x2', (i === 1) ? x : width);
+		line.setAttribute('y2', ly);
+		line.setAttribute('stroke-width',1);
+		line.setAttribute('stroke',(i === 1) ? '#ff0000' : '#ffcccc');
+		line.setAttribute('stroke-width', Math.max(1, range));
+		svg_lines.appendChild(line);
+		lines.push(line);
+	}
+	objects[active].push({
+		x,
+		y,
+		freq,
+		osc,
+		gain,
+		lines
+	});
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+}
+
+window.onload = draw_svg_background;
+
+	</script>
+	</head>
+	<body>
+		<input type="button" onclick="switc(0)" value="0">
+		<input type="button" onclick="switc(1)" value="1">
+		<input type="button" onclick="switc(2)" value="2">
+		<input type="button" onclick="switc(3)" value="3">
+		<br>
+		<svg id="svg" width="1500" height="800" onmousedown="svgdown(event)" onmouseup="svgclick(event)">
+			<g id="bg"></g>
+			<g id="letters"></g>
+			<g id="lines"></g>
+		</svg>
+	</body>
+</html>
