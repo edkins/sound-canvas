@@ -16,6 +16,8 @@ const fg_lines = {};
 const oscs = [undefined]; // they start at 1
 const gains = [undefined];
 const max_i = 145;
+const step_hz = c_hz / 8;
+let pinching = false;
 
 function freq_to_y(freq) {
 	return height - freq / 2;
@@ -158,6 +160,60 @@ function svgmove(e) {
 	}
 }
 
+function pinch() {
+	let bend = new Float32Array(max_i + 1);
+
+	if (pinching) {
+		let next_active = new Int32Array(max_i + 1);
+		let prev_active = new Int32Array(max_i + 1);
+		let prev = 0;
+		for (let i = 1; i <= max_i; i++) {
+			prev_active[i] = prev;
+			if (bg_lines[i].dataset.active === 'y') {
+				prev = i;
+			}
+		}
+		let next = max_i + 1;
+		for (let i = max_i; i >= 1; i--) {
+			next_active[i] = next;
+			if (bg_lines[i].dataset.active === 'y') {
+				next = i;
+			}
+		}
+
+
+		// Look for half-step pinches
+		for (let i = 1; i <= max_i; i++) {
+			if (bg_lines[i].dataset.active === 'y') {
+				const next_dist = next_active[i] - i;
+				const prev_dist = i - prev_active[i];
+				const freq = i * c_hz / 8;
+				if (next_dist === 1 && next_active[i] <= max_i && prev_dist >= 3) {
+					bend[i] += 0.5 * step_hz;
+					//bend[i] = -freq;
+				}
+				else if (prev_dist === 1 && next_dist >= 3) {
+					bend[i] -= 0.5 * step_hz;
+					//bend[i] = -freq;
+				}
+				else if (next_dist === 2 && prev_dist >= 3) {
+					bend[i] += 1.00 * step_hz;
+					//bend[i] = -freq;
+				}
+				else if (prev_dist === 2 && next_dist >= 3) {
+					bend[i] -= 1.00 * step_hz;
+					//bend[i] = -freq;
+				}
+			}
+		}
+	}
+	for (let i = 1; i <= max_i; i++) {
+		bg_lines[i].setAttribute('y2', parseFloat(bg_lines[i].getAttribute('y1')) - bend[i] / 2);
+		const freq = i * c_hz / 8 + bend[i];
+		oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
+	}
+}
+
 function redo_gains() {
 	start();
 	for (let i = 1; i <= max_i; i++) {
@@ -175,11 +231,14 @@ function redo_gains() {
 			const freq = i * c_hz / 8;
 			volume += w1 / freq / 40;
 			bg_lines[i].setAttribute('stroke','#ffcc44');
+			bg_lines[i].dataset.active = 'y';
 		} else {
 			bg_lines[i].setAttribute('stroke','#cccccc');
+			bg_lines[i].dataset.active = '';
 		}
 		gains[i].gain.setValueAtTime(volume, ctx.currentTime);
 	}
+	pinch();
 }
 
 function set_volumes_between(y0, y1, w0) {
@@ -254,6 +313,11 @@ function svgup(e) {
 	prev_y0 = undefined;
 }
 
+function toggle_pinch() {
+	pinching = !pinching;
+	redo_gains();
+}
+
 window.onload = draw_svg_background;
 
 	</script>
@@ -263,6 +327,7 @@ window.onload = draw_svg_background;
 		<input type="button" onclick="switc(1)" value="1">
 		<input type="button" onclick="switc(2)" value="2">
 		<input type="button" onclick="switc(3)" value="3">
+		<input type="button" onclick="toggle_pinch()" value="pinch">
 		<br>
 		<svg id="svg" width="1500" height="800" onmousedown="svgclick(event)" onmousemove="svgmove(event)" onmouseup="svgup(event)">
 			<g id="bg"></g>
