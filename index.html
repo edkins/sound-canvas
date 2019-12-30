@@ -1,0 +1,62 @@
+<html>
+	<head>
+	<meta charset="utf-8">
+	<script>
+
+let ctx = undefined;
+
+function create_periodic_wave(ctx, decay, volume) {
+	let target = [];
+	const max = 2560;
+	for (let i = 0; i < max; i++) {
+		target.push(Math.exp(-decay * i / max));
+	}
+	let n = max;
+	let real = new Float32Array(n);
+	let imag = new Float32Array(n);
+	for (let j = 0; j < n; j++) {
+		let re = 0;
+		let im = 0;
+		for (let i = 0; i < max; i++) {
+			re += Math.cos(2 * Math.PI * i * j / max) * target[i];
+			im += Math.sin(2 * Math.PI * i * j / max) * target[i];
+		}
+		real[j] = re / max * volume;
+		imag[j] = im / max * volume;
+	}
+
+	periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
+	offset = real[0]/2;  // real[0] seems to get ignored?
+	return {periodic_wave, offset};
+}
+
+function start() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		let osc = ctx.createOscillator();
+		let shape = ctx.createOscillator();
+		let gain = ctx.createGain();
+
+		let {periodic_wave,offset} = create_periodic_wave(ctx, 5, 5);
+		console.log(offset);
+
+		shape.frequency.setValueAtTime(1, ctx.currentTime);
+		shape.setPeriodicWave(periodic_wave);
+		shape.connect(gain.gain);
+		shape.start();
+
+		gain.gain.setValueAtTime(offset, ctx.currentTime);
+		
+		osc.connect(gain);
+		osc.start();
+
+		gain.connect(ctx.destination);
+	}
+}
+
+	</script>
+	</head>
+	<body>
+		<input type="button" onclick="start()" value="Start">
+	</body>
+</html>
