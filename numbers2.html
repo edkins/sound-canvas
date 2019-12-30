@@ -2,6 +2,8 @@
 	<head>
 		<meta charset="utf-8">
 	<script>
+const width = 600;
+const height = 600;
 const c_hz = 261.6255653006;
 const step_hz = c_hz / 8;
 let ctx = undefined;
@@ -49,7 +51,7 @@ function play() {
 			osc.frequency.setValueAtTime(freq, ctx.currentTime);
 			osc.start();
 			gain.connect(ctx.destination);
-			volumes[i] = (i === 8) ? 1 : 0;
+			volumes[i] = 1 / freq;
 		}
 	}
 	redo_gains();
@@ -65,43 +67,22 @@ function redo_gains() {
 	}
 }
 
-let last_x = undefined;
-let last_y = undefined;
-
-function raise_volumes_of_multiple_shrink_other(m, dy) {
+function svg_mm(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = (e.clientX - dim.left) / dim.width;
+	const y = (e.clientY - dim.top) / dim.height;
 	for (let i = 1; i < max_i; i++) {
 		const freq = i * step_hz;
-		if (i % m === 0) {
-			volumes[i] = Math.max(0, Math.min(1, volumes[i] + dy / freq));
-		} else {
-			volumes[i] = Math.max(0, Math.min(1, volumes[i] - dy / freq));
+		let volume = 1 / freq;
+		if (i % 8 === 0) {
+			volume *= Math.pow(100,x);
 		}
-	}
-}
-
-function svg_mm(e) {
-	if (e.buttons && last_x !== undefined) {
-		const dy = e.clientY - last_y;
-		const dx = Math.max(0, e.clientX - last_x);
-		if (dy >= 0) {
-			const new_volumes = new Float32Array(1 + max_i);
-			new_volumes.set(volumes);
-			history.push(volumes);
-			volumes = new_volumes;
-
-			if (dy > 0) {
-				raise_volumes_of_multiple_shrink_other(8, dy);
-			}
-			if (dx > 0) {
-				raise_volumes_of_multiple_shrink_other(6, dx);
-			}
-		} else if (history.length > 0) {
-			volumes = history.pop();
+		if (i % 6 === 0) {
+			volume *= Math.pow(100,y);
 		}
-		redo_gains();
+		volumes[i] = volume / freq;
 	}
-	last_x = e.clientX;
-	last_y = e.clientY;
+	redo_gains();
 }
 
 </script>
@@ -109,7 +90,7 @@ function svg_mm(e) {
 	<body>
 		<input type="button" value="Play" onclick="play()">
 		<br>
-		<svg width="600" height="600" style="background:#eee" onmousedown="play()" onmousemove="svg_mm(event)">
+		<svg id="svg" width="600" height="600" style="background:#eee" onmousedown="play()" onmousemove="svg_mm(event)">
 		</svg>
 	</body>
 </html>
