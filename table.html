@@ -9,12 +9,31 @@ const height = 600;
 const square_size = 50;
 const c_hz = 261.6255653006;
 const oscillators = {};
+const all_littles = [];
 
 let ctx = undefined;
+let pulse_oscs = [];
+let pulse_offsets = [];
 
 function start() {
 	if (ctx === undefined) {
 		ctx = new AudioContext();
+		for (let i = 0; i < 16; i++) {
+			const target = new Float32Array(64);
+			target[4*i] = 1;
+			target[4*i+1] = 0.5;
+			target[4*i+2] = 0.25;
+			target[4*i+3] = 0.125;
+			const {periodic_wave,offset} = create_periodic_wave(ctx, target);
+			const shape = ctx.createOscillator();
+			shape.frequency.setValueAtTime(1, 0);
+			shape.setPeriodicWave(periodic_wave);
+			pulse_oscs.push(shape);
+			pulse_offsets.push(offset);
+		}
+		for (let i = 0; i < 16; i++) {
+			pulse_oscs[i].start();
+		}
 	}
 }
 
@@ -22,12 +41,8 @@ function pitch_to_freq(pitch) {
 	return Math.pow(2.0, parseInt(pitch) / 12) * c_hz;
 }
 
-function create_periodic_wave(ctx, decay, volume) {
-	let target = [];
-	const max = 2560;
-	for (let i = 0; i < max; i++) {
-		target.push(Math.exp(-decay * i / max));
-	}
+function create_periodic_wave(ctx, target) {
+	const max = 64;
 	let n = max;
 	let real = new Float32Array(n);
 	let imag = new Float32Array(n);
@@ -38,37 +53,42 @@ function create_periodic_wave(ctx, decay, volume) {
 			re += Math.cos(2 * Math.PI * i * j / max) * target[i];
 			im += Math.sin(2 * Math.PI * i * j / max) * target[i];
 		}
-		real[j] = re / max * volume;
-		imag[j] = im / max * volume;
+		real[j] = re / max;
+		imag[j] = im / max;
 	}
 
-	periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
-	offset = real[0]/2;  // real[0] seems to get ignored?
+	let periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
+	let offset = 0;//real[0]/2;  // real[0] seems to get ignored?
 	return {periodic_wave, offset};
 }
 
 function rect_click(e) {
 	let little = e.target;
+	let t = parseInt(little.dataset.t);
+	let pitch = little.dataset.pitch;
 	start();
 	if (little.dataset.active === '') {
 		little.setAttribute('opacity',0.6);
 		little.dataset.active = 'y';
-		let pitch = little.dataset.pitch;
 		if (!(pitch in oscillators)) {
-			//const {periodic_wave,offset} = create_periodic_wave(ctx, 5, 1);
 			const osc = ctx.createOscillator();
-			const freq = pitch_to_freq(pitch);
-			osc.frequency.setValueAtTime(freq, ctx.currentTime);
-			osc.start();
 			const gain = ctx.createGain();
-			gain.gain.setValueAtTime(50 / freq, ctx.currentTime);
+			const freq = pitch_to_freq(pitch);
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+			osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+			osc.start();
 			osc.connect(gain);
 			gain.connect(ctx.destination);
 			oscillators[pitch] = {osc,gain};
 		}
+
+		oscillators[pitch].gain.gain.setValueAtTime(pulse_offsets[t], ctx.currentTime);
+		pulse_oscs[t].connect(oscillators[pitch].gain.gain);
 	} else {
 		little.setAttribute('opacity',0.1);
 		little.dataset.active = '';
+		pulse_oscs[t].disconnect(oscillators[pitch].gain.gain);
 	}
 }
 
@@ -109,11 +129,11 @@ function make_table() {
 					little.setAttribute('fill','#888');
 					little.setAttribute('opacity',0.1);
 					little.dataset.pitch = 3 * i + 4 * j;
-					little.dataset.lx = lx;
-					little.dataset.ly = ly;
+					little.dataset.t = lx + ly * 4;
 					little.dataset.active = '';
 					little.onclick = rect_click;
 					littles.appendChild(little);
+		      			all_littles.push(little);
 				}
 			}
 		}
