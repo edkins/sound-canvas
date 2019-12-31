@@ -24,6 +24,11 @@ let square_gain = undefined;
 let square_pitch = undefined;
 let square_noise = false;
 let rects = {};
+let shimmer_osc = undefined;
+let shimmer_amount_gain = undefined;
+let shimmer_gain = undefined;
+let convolver_enabled = [];
+let convolvers = [];
 
 function i_to_shape_x(i) {
 	return Math.pow(i, 0.5) * 20;
@@ -112,11 +117,27 @@ function redo_shape() {
 		audio_buffer[j] = value;
 	}
 
+	// Shimmer
+	if (shimmer_osc === undefined) {
+		shimmer_osc = ctx.createOscillator();
+		shimmer_osc.start();
+		shimmer_amount_gain = ctx.createGain();
+		shimmer_gain = ctx.createGain();
+	}
+	let a = parseFloat(document.getElementById('shimmer_amount').value);
+	shimmer_gain.gain.setValueAtTime(1 - a, ctx.currentTime);
+	shimmer_amount_gain.gain.setValueAtTime(a, ctx.currentTime);
+	shimmer_osc.frequency.setValueAtTime(parseFloat(document.getElementById('shimmer_freq').value), ctx.currentTime);
+	shimmer_osc.connect(shimmer_amount_gain);
+	shimmer_amount_gain.connect(shimmer_gain.gain);
+	shimmer_gain.connect(ctx.destination);
+
+	// Square/noise convolution with click
 	let imag = new Float32Array(shape_max); // all zeros
 	let periodic_wave = ctx.createPeriodicWave(shape, imag);
 	shape_node.setPeriodicWave(periodic_wave);
 	if (square_pitch === undefined) {
-		shape_gain.connect(ctx.destination);
+		shape_gain.connect(shimmer_gain);
 	} else {
 		let freq = c_hz * Math.pow(2, square_pitch / 12) / 8;
 		shape_gain.disconnect();
@@ -145,7 +166,7 @@ function redo_shape() {
 
 		shape_gain.connect(square_conv);
 		square_osc.frequency.setValueAtTime(freq, ctx.currentTime);
-		square_gain.connect(ctx.destination);
+		square_gain.connect(shimmer_gain);
 	}
 }
 
@@ -177,5 +198,8 @@ window.onload = initialize;
 		<input type="button" value="B" onclick="set_square_wave_pitch(11)">
 		<input type="button" value="C" onclick="set_square_wave_pitch(12)">
 		<input type="button" value="noise" onclick="set_noise_wave()">
+		<br>
+		Shimmer freq: <input type="text" value="5" id="shimmer_freq" onchange="redo_shape()">
+		amount: <input type="text" value="1" id="shimmer_amount" onchange="redo_shape()">
 	</body>
 </html>
