@@ -1,0 +1,181 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+
+'use strict';
+
+const c_hz = 261.6255653006;
+const shape_height = 256;
+const shape_max = 4096;
+const shape_max_used = shape_max / 8;
+const shape = new Float32Array(shape_max);
+let shape_freq = undefined;
+let shape_audio = undefined;
+let last_x = undefined;
+let last_y = undefined;
+let ctx = undefined;
+let shape_node = undefined;
+let shape_gain = undefined;
+let square_osc = undefined;
+let square_conv = undefined;
+let square_gain = undefined;
+let square_pitch = undefined;
+let square_noise = false;
+let rects = {};
+
+function i_to_shape_x(i) {
+	return Math.pow(i, 0.5) * 20;
+}
+
+function shape_x_to_i(x) {
+	return Math.floor(Math.pow(x / 20, 2));
+}
+
+function initialize() {
+	for (let i = 1; i < shape_max_used; i++) {
+		shape[i] = Math.max(0, (i - 5) * shape_height * Math.pow(0.95, i) / 10);
+	}
+	redraw_shape(1, shape_max_used, undefined);
+}
+
+function mm_shape(e) {
+	const svg = document.getElementById('shape');
+	const dim = svg.getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	if (e.buttons && last_x !== undefined) {
+		let ix = shape_x_to_i(x);
+		let ilx = shape_x_to_i(last_x);
+		let i0 = Math.min(ix, ilx);
+		let i1 = Math.max(ix, ilx);
+		redraw_shape(i0,i1,y);
+		redo_shape();
+	}
+	last_x = x;
+	last_y = y;
+}
+
+function redraw_shape(i0, i1, y) {
+	const svg = document.getElementById('shape');
+	for (let i = i0; i <= i1; i++) {
+		if (i >= 1 && i < shape_max_used) {
+			let rect = undefined;
+			if (i in rects) {
+				rect = rects[i];
+			} else {
+				rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+				rect.setAttribute('x', i_to_shape_x(i));
+				rect.setAttribute('width', i_to_shape_x(i+1) - i_to_shape_x(i));
+				rect.setAttribute('fill','#bbd');
+				svg.appendChild(rect);
+				rects[i] = rect;
+			}
+			if (y !== undefined) {
+				shape[i] = shape_height - y;
+			}
+			rect.setAttribute('y', shape_height - shape[i]);
+			rect.setAttribute('height', shape[i]);
+		}
+	}
+}
+
+function redo_shape() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+	}
+	if (square_gain !== undefined) {
+		square_gain.disconnect();
+	}
+	if (shape_gain !== undefined) {
+		shape_gain.disconnect();
+	}
+	if (shape_node === undefined) {
+		shape_node = ctx.createOscillator();
+		shape_freq = ctx.sampleRate / shape_max;
+		shape_node.frequency.setValueAtTime(shape_freq, ctx.currentTime);
+		shape_node.start();
+		shape_gain = ctx.createGain();
+		shape_gain.gain.setValueAtTime(0.1, ctx.currentTime);
+		shape_node.connect(shape_gain);
+	}
+
+	shape_audio = ctx.createBuffer(1, shape_max, ctx.sampleRate);
+	const audio_buffer = shape_audio.getChannelData(0);
+
+	for (let j = 0; j < shape_max; j++) {
+		let value = 0;
+		for (let i = 1; i < shape_max_used; i++) {
+			value += Math.cos(2 * Math.PI * i * j / shape_max) * shape[i];
+		}
+		audio_buffer[j] = value;
+	}
+
+	let imag = new Float32Array(shape_max); // all zeros
+	let periodic_wave = ctx.createPeriodicWave(shape, imag);
+	shape_node.setPeriodicWave(periodic_wave);
+	if (square_pitch === undefined) {
+		shape_gain.connect(ctx.destination);
+	} else {
+		let freq = c_hz * Math.pow(2, square_pitch / 12) / 8;
+		shape_gain.disconnect();
+		if (square_gain === undefined) {
+			square_osc = ctx.createOscillator();
+			square_osc.start();
+			square_gain = ctx.createGain();
+			square_conv = ctx.createConvolver();
+			square_conv.connect(square_gain);
+			square_osc.connect(square_conv);
+		}
+		if (square_noise) {
+			let re = new Float32Array(1024);
+			let im = new Float32Array(1024);
+			for (let i = 0; i < 1024; i++) {
+				re[i] = (Math.random() - 0.5) / i;
+				im[i] = (Math.random() - 0.5) / i;
+			}
+			square_osc.setPeriodicWave(ctx.createPeriodicWave(re,im));
+			square_gain.gain.setValueAtTime(4.00, ctx.currentTime);
+		} else {
+			square_osc.type = 'square';
+			square_gain.gain.setValueAtTime(0.25, ctx.currentTime);
+		}
+		square_conv.buffer = shape_audio;
+
+		shape_gain.connect(square_conv);
+		square_osc.frequency.setValueAtTime(freq, ctx.currentTime);
+		square_gain.connect(ctx.destination);
+	}
+}
+
+function set_square_wave_pitch(pitch) {
+	square_pitch = pitch;
+	square_noise = false;
+	redo_shape();
+}
+
+function set_noise_wave() {
+	square_pitch = -44;
+	square_noise = true;
+	redo_shape();
+}
+
+window.onload = initialize;
+
+	</script>
+	<body>
+		<svg id="shape" width="1024" height="256" style="background:#ddf" onmousemove="mm_shape(event)"></svg>
+		<br>
+		<input type="button" value="Clicks" onclick="set_square_wave_pitch(undefined)">
+		<input type="button" value="C" onclick="set_square_wave_pitch(0)">
+		<input type="button" value="D" onclick="set_square_wave_pitch(2)">
+		<input type="button" value="E" onclick="set_square_wave_pitch(4)">
+		<input type="button" value="F" onclick="set_square_wave_pitch(5)">
+		<input type="button" value="G" onclick="set_square_wave_pitch(7)">
+		<input type="button" value="A" onclick="set_square_wave_pitch(9)">
+		<input type="button" value="B" onclick="set_square_wave_pitch(11)">
+		<input type="button" value="C" onclick="set_square_wave_pitch(12)">
+		<input type="button" value="noise" onclick="set_noise_wave()">
+	</body>
+</html>
