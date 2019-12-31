@@ -34,6 +34,7 @@ let convolvers = undefined;
 let convolver_active = undefined;
 let noise_convolver = undefined;
 let noise_convolver_active = false;
+let pings_gain = undefined;
 
 function i_to_shape_x(i) {
 	return Math.pow(i, 0.5) * 10;
@@ -195,9 +196,52 @@ function redo_shape() {
 		input = shimmer_gain;
 	}
 
+	if (pings_gain === undefined) {
+		let {periodic_wave,offset} = create_ping_wave(5, 1);
+		let pings_osc = ctx.createOscillator();
+		pings_osc.setPeriodicWave(periodic_wave);
+		pings_osc.start();
+		pings_gain = ctx.createGain();
+		pings_gain.gain.setValueAtTime(offset, ctx.currentTime);
+		pings_osc.frequency.setValueAtTime(1, ctx.currentTime);
+		pings_osc.connect(pings_gain.gain);
+	}
+
+	if (document.getElementById('pings').checked) {
+		input.disconnect();
+		input.connect(pings_gain);
+		input = pings_gain;
+	}
+
 	input.disconnect();
 	input.connect(ctx.destination);
 }
+
+function create_ping_wave(decay, volume) {
+	let target = [];
+	const max = 2560;
+	for (let i = 0; i < max; i++) {
+		target.push(Math.exp(-decay * i / max));
+	}
+	let n = max;
+	let real = new Float32Array(n);
+	let imag = new Float32Array(n);
+	for (let j = 0; j < n; j++) {
+		let re = 0;
+		let im = 0;
+		for (let i = 0; i < max; i++) {
+			re += Math.cos(2 * Math.PI * i * j / max) * target[i];
+			im += Math.sin(2 * Math.PI * i * j / max) * target[i];
+		}
+		real[j] = re / max * volume;
+		imag[j] = im / max * volume;
+	}
+
+	let periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
+	let offset = real[0]/2;  // real[0] seems to get ignored?
+	return {periodic_wave, offset};
+}
+
 
 function set_clicks() {
 	redo_shape();
@@ -225,6 +269,10 @@ function set_noise_wave() {
 	redo_shape();
 }
 
+function set_pings() {
+	redo_shape();
+}
+
 window.onload = initialize;
 
 	</script>
@@ -245,5 +293,6 @@ window.onload = initialize;
 		Shimmer freq: <input type="text" value="5" id="shimmer_freq" onchange="redo_shape()">
 		amount: <input type="text" value="1" id="shimmer_amount" onchange="redo_shape()">
 		<br>
+		Pings: <input type="checkbox" id="pings" onchange="set_pings()">
 	</body>
 </html>
