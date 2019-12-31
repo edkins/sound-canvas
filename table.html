@@ -21,11 +21,11 @@ function start() {
 		for (let i = 0; i < 16; i++) {
 			const target = new Float32Array(2560);
 			for (let j = 0; j < 160; j++) {
-				target[160 * i + j] = 1;
+				target[160 * i + j] = 0.5;
 			}
 			const {periodic_wave,offset} = create_periodic_wave(ctx, target);
 			const shape = ctx.createOscillator();
-			shape.frequency.setValueAtTime(1, 0);
+			shape.frequency.setValueAtTime(0.5, 0);
 			shape.setPeriodicWave(periodic_wave);
 			pulse_oscs.push(shape);
 			pulse_offsets.push(offset);
@@ -57,7 +57,7 @@ function create_periodic_wave(ctx, target) {
 	}
 
 	let periodic_wave = ctx.createPeriodicWave(real, imag, {disableNormalization:true});
-	let offset = 0;//real[0]/2;  // real[0] seems to get ignored?
+	let offset = real[0]/2;  // real[0] seems to get ignored?
 	return {periodic_wave, offset};
 }
 
@@ -89,7 +89,6 @@ function rect_click(e) {
 			}
 		}
 	} else {
-		oscillators[pitch].gain.gain.setValueAtTime(pulse_offsets[t], ctx.currentTime);
 		oscillators[pitch].pattern[t] = true;
 		pulse_oscs[t].connect(oscillators[pitch].gain.gain);
 		for (const other of all_littles) {
@@ -98,6 +97,13 @@ function rect_click(e) {
 			}
 		}
 	}
+	let offset = 0;
+	for (let i = 0; i < 16; i++) {
+		if (i in oscillators[pitch].pattern) {
+			offset += pulse_offsets[i];
+		}
+	}
+	oscillators[pitch].gain.gain.setValueAtTime(offset, ctx.currentTime);
 }
 
 function make_table() {
