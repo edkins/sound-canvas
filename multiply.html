@@ -8,10 +8,10 @@
 
 const c_hz = 261.6255653006;
 const shape_height = 256;
-const shape_max = 4096;
-const shape_max_used = shape_max / 8;
+const shape_freq = 4.0;
+const shape_max = Math.floor(44100 / shape_freq);
+const shape_max_used = shape_max;
 const shape = new Float32Array(shape_max);
-let shape_freq = undefined;
 let shape_audio = undefined;
 let last_x = undefined;
 let last_y = undefined;
@@ -27,15 +27,20 @@ let rects = {};
 let shimmer_osc = undefined;
 let shimmer_amount_gain = undefined;
 let shimmer_gain = undefined;
-let convolver_enabled = [];
-let convolvers = [];
+let multiply_pitch = undefined;
+let multiplier_osc = undefined;
+let multiplier_gain = undefined;
+let convolvers = undefined;
+let convolver_active = undefined;
+let noise_convolver = undefined;
+let noise_convolver_active = false;
 
 function i_to_shape_x(i) {
-	return Math.pow(i, 0.5) * 20;
+	return Math.pow(i, 0.5) * 10;
 }
 
 function shape_x_to_i(x) {
-	return Math.floor(Math.pow(x / 20, 2));
+	return Math.floor(Math.pow(x / 10, 2));
 }
 
 function initialize() {
@@ -86,6 +91,14 @@ function redraw_shape(i0, i1, y) {
 	}
 }
 
+function square_wave(x) {
+	if (x - Math.floor(x) < 0.5) {
+		return 0.01;
+	} else {
+		return -0.01;
+	}
+}
+
 function redo_shape() {
 	if (ctx === undefined) {
 		ctx = new AudioContext();
@@ -98,87 +111,117 @@ function redo_shape() {
 	}
 	if (shape_node === undefined) {
 		shape_node = ctx.createOscillator();
-		shape_freq = ctx.sampleRate / shape_max;
 		shape_node.frequency.setValueAtTime(shape_freq, ctx.currentTime);
 		shape_node.start();
 		shape_gain = ctx.createGain();
-		shape_gain.gain.setValueAtTime(0.1, ctx.currentTime);
+		shape_gain.gain.setValueAtTime(1, ctx.currentTime);
 		shape_node.connect(shape_gain);
 	}
 
-	shape_audio = ctx.createBuffer(1, shape_max, ctx.sampleRate);
-	const audio_buffer = shape_audio.getChannelData(0);
+	let real = new Float32Array(shape_max);
+        let imag = new Float32Array(shape_max);
+        let zero = new Float32Array(shape_max);
+	for (let i = 0; i < shape_max; i++) {
+		let t = Math.random() * 2 * Math.PI;
+		real[i] = shape[i] * Math.cos(t);
+		imag[i] = shape[i] * Math.sin(t);
+	}
+        let periodic_wave = ctx.createPeriodicWave(shape,zero);
+        shape_node.setPeriodicWave(periodic_wave);
 
-	for (let j = 0; j < shape_max; j++) {
-		let value = 0;
-		for (let i = 1; i < shape_max_used; i++) {
-			value += Math.cos(2 * Math.PI * i * j / shape_max) * shape[i];
+	let input = shape_gain;
+
+	if (convolvers === undefined) {
+		convolvers = [];
+		convolver_active = [];
+		let buffer_max = Math.floor(ctx.sampleRate / shape_freq);
+		for (let pitch = 0; pitch <= 12; pitch++) {
+			let freq = c_hz * Math.pow(2, pitch / 12);
+			const audio = ctx.createBuffer(1, buffer_max, ctx.sampleRate);
+			const audio_buffer = audio.getChannelData(0);
+			const freq2 = buffer_max / Math.round(buffer_max / freq);
+			for (let i = 0; i < buffer_max; i++) {
+				let t = ((i / buffer_max) - 0.5) * 4;
+				//audio_buffer[i] = Math.sin(2 * Math.PI * i * freq2 / ctx.sampleRate) / 100;
+				//audio_buffer[i] = Math.sin(2 * Math.PI * i * 0.0007) / 100;
+				audio_buffer[i] = square_wave(i * freq2 / ctx.sampleRate);
+			}
+			const convolver = ctx.createConvolver();
+			convolver.normalize = false;
+			convolver.buffer = audio;
+			convolvers.push(convolver);
+			convolver_active.push(false);
 		}
-		audio_buffer[j] = value;
+		const audio = ctx.createBuffer(1, buffer_max, ctx.sampleRate);
+		const audio_buffer = audio.getChannelData(0);
+		for (let i = 0; i < buffer_max; i++) {
+			audio_buffer[i] = Math.random() / 20;
+		}
+		noise_convolver = ctx.createConvolver();
+		noise_convolver.normalize = false;
+		noise_convolver.buffer = audio;
+	}
+
+	for (let i = 0; i < convolvers.length; i++) {
+		convolvers[i].disconnect();
+		if (convolver_active[i]) {
+			input.disconnect();
+			input.connect(convolvers[i]);
+			input = convolvers[i];
+		}
+	}
+	if (noise_convolver_active) {
+		input.disconnect();
+		input.connect(noise_convolver);
+		input = noise_convolver;
 	}
 
 	// Shimmer
-	if (shimmer_osc === undefined) {
-		shimmer_osc = ctx.createOscillator();
-		shimmer_osc.start();
-		shimmer_amount_gain = ctx.createGain();
-		shimmer_gain = ctx.createGain();
-	}
 	let a = parseFloat(document.getElementById('shimmer_amount').value);
-	shimmer_gain.gain.setValueAtTime(1 - a, ctx.currentTime);
-	shimmer_amount_gain.gain.setValueAtTime(a, ctx.currentTime);
-	shimmer_osc.frequency.setValueAtTime(parseFloat(document.getElementById('shimmer_freq').value), ctx.currentTime);
-	shimmer_osc.connect(shimmer_amount_gain);
-	shimmer_amount_gain.connect(shimmer_gain.gain);
-	shimmer_gain.connect(ctx.destination);
-
-	// Square/noise convolution with click
-	let imag = new Float32Array(shape_max); // all zeros
-	let periodic_wave = ctx.createPeriodicWave(shape, imag);
-	shape_node.setPeriodicWave(periodic_wave);
-	if (square_pitch === undefined) {
-		shape_gain.connect(shimmer_gain);
-	} else {
-		let freq = c_hz * Math.pow(2, square_pitch / 12) / 8;
-		shape_gain.disconnect();
-		if (square_gain === undefined) {
-			square_osc = ctx.createOscillator();
-			square_osc.start();
-			square_gain = ctx.createGain();
-			square_conv = ctx.createConvolver();
-			square_conv.connect(square_gain);
-			square_osc.connect(square_conv);
+	if (a > 0) {
+		if (shimmer_osc === undefined) {
+			shimmer_osc = ctx.createOscillator();
+			shimmer_osc.start();
+			shimmer_amount_gain = ctx.createGain();
+			shimmer_gain = ctx.createGain();
+			shimmer_osc.connect(shimmer_amount_gain);
+			shimmer_amount_gain.connect(shimmer_gain.gain);
 		}
-		if (square_noise) {
-			let re = new Float32Array(1024);
-			let im = new Float32Array(1024);
-			for (let i = 0; i < 1024; i++) {
-				re[i] = (Math.random() - 0.5) / i;
-				im[i] = (Math.random() - 0.5) / i;
-			}
-			square_osc.setPeriodicWave(ctx.createPeriodicWave(re,im));
-			square_gain.gain.setValueAtTime(4.00, ctx.currentTime);
-		} else {
-			square_osc.type = 'square';
-			square_gain.gain.setValueAtTime(0.25, ctx.currentTime);
-		}
-		square_conv.buffer = shape_audio;
-
-		shape_gain.connect(square_conv);
-		square_osc.frequency.setValueAtTime(freq, ctx.currentTime);
-		square_gain.connect(shimmer_gain);
+		shimmer_gain.gain.setValueAtTime(1 - a, ctx.currentTime);
+		shimmer_amount_gain.gain.setValueAtTime(a, ctx.currentTime);
+		shimmer_osc.frequency.setValueAtTime(parseFloat(document.getElementById('shimmer_freq').value), ctx.currentTime);
+		input.disconnect();
+		input.connect(shimmer_gain);
+		input = shimmer_gain;
 	}
+
+	input.disconnect();
+	input.connect(ctx.destination);
+}
+
+function set_clicks() {
+	redo_shape();
+	for (let pitch = 0; pitch <= 12; pitch++) {
+		convolver_active[pitch] = false;
+	}
+	noise_convolver_active = false;
+	redo_shape();
 }
 
 function set_square_wave_pitch(pitch) {
-	square_pitch = pitch;
-	square_noise = false;
+	redo_shape();
+	for (let p = 0; p <= 12; p++) {
+		if (p !== pitch) {
+			convolver_active[p] = false;
+		}
+	}
+
+	convolver_active[pitch] = !convolver_active[pitch];
 	redo_shape();
 }
 
 function set_noise_wave() {
-	square_pitch = -44;
-	square_noise = true;
+	noise_convolver_active = !noise_convolver_active;
 	redo_shape();
 }
 
@@ -188,7 +231,7 @@ window.onload = initialize;
 	<body>
 		<svg id="shape" width="1024" height="256" style="background:#ddf" onmousemove="mm_shape(event)"></svg>
 		<br>
-		<input type="button" value="Clicks" onclick="set_square_wave_pitch(undefined)">
+		<input type="button" value="Clicks" onclick="set_clicks()">
 		<input type="button" value="C" onclick="set_square_wave_pitch(0)">
 		<input type="button" value="D" onclick="set_square_wave_pitch(2)">
 		<input type="button" value="E" onclick="set_square_wave_pitch(4)">
@@ -201,5 +244,6 @@ window.onload = initialize;
 		<br>
 		Shimmer freq: <input type="text" value="5" id="shimmer_freq" onchange="redo_shape()">
 		amount: <input type="text" value="1" id="shimmer_amount" onchange="redo_shape()">
+		<br>
 	</body>
 </html>
