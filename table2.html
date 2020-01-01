@@ -126,8 +126,8 @@ function rhythm_click(e) {
 		} else {
 			text = cell(chord.root,0).textContent + ' ' + chord.quality;
 		}
-		if (chord.alt !== undefined) {
-			text += ' or ' + cell(chord.alt.root,0).textContent + ' ' + chord.alt.quality;
+		for (let i = 1; i < chord.candidates.length; i++) {
+			text += ' or ' + cell(chord.candidates[i].root,0).textContent + ' ' + chord.candidates[i].quality;
 		}
 	}
 
@@ -142,7 +142,7 @@ function rhythm_click(e) {
 }
 
 function describe_chord_quality() {
-	let chord = {contains:[],count:0};
+	let chord = {contains:[],count:0,candidates:[]};
 	
 	// First find out which notes are actually used
 	for (let p = 0; p < 12; p++) {
@@ -177,99 +177,232 @@ function describe_chord_quality() {
 		return chord;
 	}
 
-	// Search for root by looking for promising intervals
-	if (fifths.length === 1) {
-		chord.root = fifths[0];
-		if (chord.count === 2) {
+	if (chord.count === 2) {
+		// Two notes is just an interval, not a full chord
+		if (fifths.length === 1) {
+			chord.root = fifths[0];
 			chord.quality = 'fifth';
-		} else if (chord.count === 3 && maj_thirds.length === 1 && maj_thirds[0] === chord.root) {
-			chord.quality = 'maj';
-		} else if (chord.count === 3 && maj_thirds.length === 1 && min_thirds[0] === chord.root) {
-			chord.quality = 'min';
-		} else if (chord.count === 4 && maj_thirds.length === 1 && maj_thirds[0] === chord.root && min_thirds.length === 2) {
-			chord.quality = '7';
-		} else if (chord.count === 4 && maj_thirds.length === 3 && min_thirds.length === 1 && min_thirds[0] === chord.root) {
-			chord.quality = 'mM7';
-		} else if (chord.count === 4 && maj_thirds.length === 1 && min_thirds.length === 2 && maj_thirds[0] !== chord.root) {
-			chord.quality = 'm6';
-			chord.alt = {
-				quality:'ø7',
-				root:(chord.root+3)%12
-			};
-		}
-	} else if (fifths.length === 2) {
-		// Which is the root?
-		let i = interval(fifths[0], fifths[1]);
-		if (i === FIFTH) {
-			chord.root = fifths[1];
-			if (chord.count === 3) { 
-				chord.quality = 'sus4';
-				chord.alt = {
-					root: fifths[0],
-					quality: 'sus2'
-				}
-			}
-		} else if (i === -FIFTH) {
-			chord.root = fifths[0];
-			if (chord.count === 3) { 
-				chord.quality = 'sus2';
-				chord.alt = {
-					root: fifths[1],
-					quality: 'sus2'
-				}
-			}
-		} else if (i === MINOR_THIRD) {
-			chord.root = fifths[1];
-			if (chord.count === 4) {
-				chord.quality = '6';
-				chord.alt = {
-					root: fifths[0],
-					quality: 'm7'
-				}
-			}
-		} else if (i === -MINOR_THIRD) {
-			chord.root = fifths[0];
-			if (chord.count === 4) { 
-				chord.quality = '6';
-				chord.alt = {
-					root: fifths[1],
-					quality: 'm7'
-				}
-			}
-		} else if (i === MAJOR_THIRD) {
-			chord.root = fifths[0];
-			if (chord.count === 4) { 
-				chord.quality = 'M7';
-			}
-		} else if (i === -MAJOR_THIRD) {
-			chord.root = fifths[1];
-			if (chord.count === 4) { 
-				chord.quality = 'M7';
-			}
-		}
-	} else if (fifths.length === 3 && chord.count === 4 && min_thirds.length === 1) {
-		// Four notes all adjacent to each other in the circle of fifths
-		// Pick the 3rd of these and call it a 7sus4
-		chord.root = (min_thirds[0] + 11) % 12;
-		chord.quality = '7sus4';
-	} else if (chord.count === 3 && maj_thirds.length === 3) {
-		// Won't try and pick a root here because there are 3 symmetrical possibilities
-		chord.quality = 'aug';
-	} else if (chord.count === 3 && maj_thirds.length === 0 && min_thirds.length === 2) {
-		chord.quality = 'dim';
-		if ((min_thirds[0] + 9) % 12 === min_thirds[0]) {
+		} else if (min_thirds.length === 1 && chord.count === 2) {
 			chord.root = min_thirds[0];
-		} else {
-			chord.root = min_thirds[1];
+			chord.quality = 'min.third';
+		} else if (maj_thirds.length === 1 && chord.count === 2) {
+			chord.root = maj_thirds[0];
+			chord.quality = 'Maj.third';
 		}
-	} else if (min_thirds.length === 1 && chord.count === 2) {
-		chord.root = min_thirds[0];
-		chord.quality = 'min.third';
-	} else if (maj_thirds.length === 1 && chord.count === 2) {
-		chord.root = maj_thirds[0];
-		chord.quality = 'Maj.third';
+		return chord;
 	}
 
+	// Consider each note as a candidate root
+	// Try and describe the corresponding chord, and return the most plausible one
+
+	let candidates = [];
+	for (let root = 0; root < 12; root++) {
+		if (!chord.contains[root]) {
+			continue;
+		}
+
+		let fifth = chord.contains[(root + 1) % 12];
+		let min_third = chord.contains[(root + 9) % 12];
+		let maj_third = chord.contains[(root + 4) % 12];
+		let maj_sixth = chord.contains[(root + 3) % 12];    // aka thirteenth
+		let min_seventh = chord.contains[(root + 10) % 12];
+		let maj_seventh = chord.contains[(root + 5) % 12];
+		let maj_ninth = chord.contains[(root + 2) % 12];    // aka second
+		let min_ninth = chord.contains[(root + 7) % 12];
+		let fourth = chord.contains[(root + 11) % 12];    // aka eleventh
+		let aug_fifth = chord.contains[(root + 8) % 12];
+		let dim_fifth = chord.contains[(root + 6) % 12];      // aka tritone, sharp eleventh
+
+		// Skip chords that contain both a major and minor third as too implausible
+		if (maj_third && min_third) {
+			continue;
+		}
+		// Skip chords that contain both a major and minor seventh
+		if (maj_seventh && min_seventh) {
+			continue;
+		}
+		// Skip chords that contain both a major and minor ninth
+		if (maj_ninth && min_ninth) {
+			continue;
+		}
+
+		// Does this look like a diminished or augmented chord?
+		let dim = min_third && dim_fifth && !fifth && !aug_fifth;
+		let aug = maj_third && aug_fifth && !fifth && !dim_fifth;
+		let no5 = !fifth && !dim && !aug;
+
+		// is this a major, minor or dominant chord?
+		let major = !dim && !aug && maj_third;
+		let minor = !dim && !aug && min_third;
+		let dom = !dim && !aug && !min_third && min_seventh;   // if we're no3 and min_seventh, assume dom.
+		let minor_major = !dim && !aug && min_third && maj_seventh;
+
+		// Is this a sus or other no3 chord?
+		let missing3 = !maj_third && !min_third;
+		let sus4 = missing3 && fourth && !maj_ninth;
+		let sus2 = missing3 && !fourth && maj_ninth;
+		let no3 = missing3 && !sus4 && !sus2;
+
+		if (no3 && no5) {
+			// Skip it.
+			continue;
+		}
+
+		// Distinguish sus4 from eleventh
+		let eleventh = fourth && !sus4;
+
+		// Dinstinguish sixth from thirteenth
+		let sev = maj_seventh || min_seventh;
+		let sixth = maj_sixth && !sev;
+		let thirteenth = maj_sixth && sev;
+
+		let nin = maj_ninth || min_ninth;
+
+		// Very rough plausibility score
+		let plausibility = -10;
+		if (fifth) plausibility += 5;
+		if ((aug || dim) && chord.count === 3) plausibility += 5;
+		if (maj_third || min_third) plausibility += 5;
+		if (sus4) plausibility += 2;
+		if (sus2) plausibility += 1;
+		if (min_seventh) plausibility += 4;
+		if (maj_seventh) plausibility += 2;
+		if (maj_ninth) plausibility += 1;
+
+		// Fractional plausibility score serves to pick a favourite if there's a tie
+		// Note no favourite will be picked if the chord qualities are identical, e.g. Caug vs Eaug
+		if (fifth) plausibility += 1/2;
+		if (min_third) plausibility += 1/4;
+		if (maj_third) plausibility += 1/8;
+		if (maj_sixth) plausibility += 1/16;
+		if (min_seventh) plausibility += 1/32;
+		if (maj_seventh) plausibility += 1/64;
+		if (maj_ninth) plausibility += 1/128;
+		if (min_ninth) plausibility += 1/256;
+		if (fourth) plausibility += 1/512;
+		if (aug_fifth) plausibility += 1/1024;
+		if (dim_fifth) plausibility += 1/2048;
+
+		let name = '';
+		let written_major = false;
+
+		if (minor_major) name += 'mM'
+		else if (dom) name += '';
+		else if (major) {
+			name += 'M';
+			written_major = true;
+		}
+		else if (minor) name += 'm';
+
+		let written_9 = false;
+		let written_11 = false;
+		let written_13 = false;
+		let written_dim = false;
+		let written_o = false;
+
+		if (aug) {
+			name += '+';
+		}
+		if (dim) {
+			if (min_seventh) {
+				name += 'ø';
+			} else if (maj_seventh) {
+				name += 'o';
+			} else {
+				name += 'dim';
+				written_dim = true;
+			}
+		}
+
+		if (sixth) {
+			if (written_dim) {
+				name += '7';  // it's called a diminished seventh, confusingly
+			} else {
+				name += '6';
+			}
+		} else if (thirteenth && eleventh && sev && nin) {
+			name += '13';
+			written_9 = true;
+			written_11 = true;
+			written_13 = true;
+		} else if (eleventh && sev && nin) {
+			name += '11';
+			written_9 = true;
+			written_11 = true;
+		} else if (maj_ninth && sev && !sus2) {
+			name += '9';
+			written_9 = true;
+		} else if (min_ninth && sev) {
+			name += '7♭9';
+			written_9 = true;
+		} else if (sev) {
+			if (maj_seventh && !written_major) {
+				name += 'M7';
+			} else {
+				name += '7';
+			}
+		}
+
+		if (sus4) {
+			name += 'sus4';
+		}
+		if (sus2) {
+			name += 'sus2';
+		}
+		if (no3) {
+			name += 'no3';
+		}
+
+		if (no5) {
+			if (dim_fifth) {
+				name += '♭5';
+				written_11 = true;
+			} else {
+				name += 'no5';
+			}
+		}
+
+		// Additions. Hopefully there won't be too many of these together
+		if (maj_ninth && !sus2 && !written_9) {
+			name += 'add9';
+		}
+		if (min_ninth && !written_9) {
+			name += 'add♭9';
+		}
+		if (eleventh && !written_11) {
+			name += 'add11';
+		}
+		if (thirteenth && !written_13) {
+			name += 'add13';
+		}
+		if (dim_fifth && !dim && !written_11) {
+			name += 'add♯11';
+		}
+		if (aug_fifth && !aug) {
+			name += 'add♯9';
+		}
+
+		if (plausibility <= 0) {
+			name = '(' + name + ')';
+		}
+
+		let candidate = {
+			root,
+			quality: name,
+			plausibility
+		};
+
+		candidates.push(candidate);
+	}
+
+	candidates.sort((a,b) => b.plausibility - a.plausibility);
+
+	chord.root = candidates[0].root;
+	chord.quality = candidates[0].quality;
+	chord.plausibility = candidates[0].plausibility;
+	chord.candidates = candidates;
+
+	chord.alt = chord.candidates.length > 1 && (chord.candidates[1].plausibility > 0 || chord.candidates[1].plausibility === chord.candidates[0].plausibility);  // cutoff for whether we advertise alternate
 	return chord;
 }
 
@@ -322,7 +455,7 @@ function rhythm_over(e) {
 		let text = '';
 		if (p2 === chord.root) {
 			text = 'root';
-		} else if (chord.alt !== undefined && p2 === chord.alt.root) {
+		} else if (chord.alt && p2 === chord.candidates[1].root) {
 			text = 'alt';
 		} else if (p2 === p && !chord.contains[p]) {
 			text = describe_pitch_quality(chord,p);
