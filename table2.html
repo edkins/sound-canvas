@@ -105,6 +105,18 @@ function rhythm_click(e) {
 			qc.classList.remove('active');
 		}
 	}
+
+	let chord_label = document.getElementById('chord');
+	let text = 'unknown';
+	if (chord.count === 0) {
+		text = 'silence';
+	} else if (chord.root !== undefined && chord.quality !== undefined) {
+		text = cell(chord.root,0).textContent + ' ' + chord.quality;
+		if (chord.alt !== undefined) {
+			text += ' or ' + cell(chord.alt.root,0).textContent + ' ' + chord.alt.quality;
+		}
+	}
+	chord_label.textContent = text;
 }
 
 function describe_chord_quality() {
@@ -130,6 +142,7 @@ function describe_chord_quality() {
 		for (let p = 0; p < 12; p++) {
 			if (chord.contains[p]) chord.root = p;
 		}
+		chord.quality = '';
 		return chord;
 	}
 
@@ -139,10 +152,60 @@ function describe_chord_quality() {
 	let min_thirds = intervals_of(chord, MINOR_THIRD);
 	if (fifths.length === 1) {
 		chord.root = fifths[0];
-	} else if (maj_thirds.length === 1) {
-		chord.root = maj_thirds[0];
+		if (chord.count === 2) {
+			chord.quality = '5';
+		} else if (chord.count === 3 && maj_thirds.length === 1 && maj_thirds[0] === chord.root) {
+			chord.quality = 'maj';
+		} else if (chord.count === 3 && maj_thirds.length === 1 && min_thirds[0] === chord.root) {
+			chord.quality = 'min';
+		}
+	} else if (fifths.length === 2) {
+		// Which is it?
+		let i = interval(fifths[0], fifths[1]);
+		if (i === FIFTH) {
+			chord.root = fifths[1];
+			chord.quality = 'sus4';
+			chord.alt = {
+				root: fifths[0],
+				quality: 'sus2'
+			}
+		} else if (i === -FIFTH) {
+			chord.root = fifths[0];
+			chord.quality = 'sus2';
+			chord.alt = {
+				root: fifths[1],
+				quality: 'sus2'
+			}
+		} else if (i === MINOR_THIRD) {
+			chord.root = fifths[1];
+			chord.quality = '6';
+			chord.alt = {
+				root: fifths[0],
+				quality: 'min7'
+			}
+		} else if (i === -MINOR_THIRD) {
+			chord.root = fifths[0];
+			chord.quality = '6';
+			chord.alt = {
+				root: fifths[1],
+				quality: 'min7'
+			}
+		} else if (i === MAJOR_THIRD) {
+			chord.root = fifths[0];
+			chord.quality = 'M7';
+		} else if (i === -MAJOR_THIRD) {
+			chord.root = fifths[1];
+			chord.quality = 'M7';
+		}
+	} else if (fifths.length === 3 && chord.count === 4 && min_thirds.length === 1) {
+		// Four notes all adjacent to each other in the circle of fifths
+		// Pick the 3rd of these and call it a 7sus4
+		chord.root = (min_thirds[0] + 11) % 12;
+		chord.quality = '7sus4';
 	} else if (min_thirds.length === 1) {
 		chord.root = min_thirds[0];
+	} else if (maj_thirds.length === 1) {
+		chord.root = maj_thirds[0];
 	}
 
 	return chord;
@@ -197,6 +260,8 @@ function rhythm_over(e) {
 		let text = '';
 		if (p2 === chord.root) {
 			text = 'root';
+		} else if (chord.alt !== undefined && p2 === chord.alt.root) {
+			text = 'alt';
 		} else if (p2 === p && !chord.contains[p]) {
 			text = describe_pitch_quality(chord,p);
 		}
@@ -234,6 +299,9 @@ td {
 }
 td.beat {
 	background: #eee;
+}
+td.boring {
+	background: #f99;
 }
 td.active {
 	background: #f00;
@@ -350,5 +418,513 @@ table {
 			</tr>
 			</tbody>
 		</table>
+		<br>
+		<div>
+			<span id="chord">silence</span>
+		</div>
+		<div>
+			<table>
+				<thead>
+					<tr>
+						<th></th>
+						<th>Maj</th>
+						<th></th>
+						<th>7&nbsp;&nbsp;&nbsp;</th>
+						<th></th>
+						<th>M7</th>
+						<th></th>
+						<th>6&nbsp;&nbsp;&nbsp;</th>
+						<th></th>
+						<th>min</th>
+						<th></th>
+						<th>min7</th>
+						<th></th>
+						<th>mM7</th>
+						<th></th>
+						<th>sus4</th>
+						<th></th>
+						<th>7sus4</th>
+						<th></th>
+						<th>sus2</th>
+						<th></th>
+						<th>dim</th>
+						<th></th>
+						<th>aug</th>
+					</tr>
+				</thead>
+				<tbody>
+				<tr>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+				</tr>
+				<tr>
+					<td>min.third</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>root</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>fifth</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.third</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>fifths</td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>min.thirds</td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.thirds</td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>3</td>
+				</tr>
+				<tr>
+					<td>whole tone</td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>semitone</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>tritone</td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				</tbody>
+			</table>
+		</div>
 	</body>
 </html>
