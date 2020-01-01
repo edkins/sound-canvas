@@ -1,0 +1,238 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+<script>
+'use strict';
+let ctx = undefined;
+let pattern = undefined;
+let timer = undefined;
+let current_t = undefined;
+let beats = 16;
+let rhythm = 0.125;
+let timer_interval = 0.1;
+let time_window = 0.2;
+let oscs = undefined;
+let gains = undefined;
+let a_hz = 440;
+
+function time_to_t(time) {
+	return Math.floor(time / rhythm);
+}
+
+function t_to_time(t) {
+	return t * rhythm;
+}
+
+function schedule_note(p, t) {
+	let time = t_to_time(t);
+	gains[p].gain.setValueAtTime(0.5, time);
+	gains[p].gain.setValueAtTime(0, time + 0.05);
+}
+
+function timer_func() {
+	current_t = Math.max(current_t, time_to_t(ctx.currentTime));
+	let window_t = time_to_t(ctx.currentTime + time_window);
+	for (let t = current_t; t < window_t; t++) {
+		for (let p = 0; p < 12; p++) {
+			if (pattern[p][t % beats]) {
+				schedule_note(p, t);
+			}
+		}
+	}
+	current_t = window_t;
+}
+
+function create_audio_objects() {
+	oscs = [];
+	gains = [];
+	for (let p = 0; p < 12; p++) {
+		let q = (7 * p + 6) % 12;  // starts from A
+		let freq = a_hz * Math.pow(2, q / 12);
+
+		let osc = ctx.createOscillator();
+		osc.frequency.setValueAtTime(freq, ctx.currentTime);
+		osc.start();
+
+		let gain = ctx.createGain();
+		gain.gain.setValueAtTime(0, ctx.currentTime);
+
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+		
+		oscs.push(osc);
+		gains.push(gain);
+	}
+}
+
+function start_timer() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		create_audio_objects();
+	}
+	if (timer === undefined) {
+		current_t = time_to_t(ctx.currentTime);
+		window.setInterval(timer_func, timer_interval * 1000);
+	}
+}
+
+function cell(row,col) {
+	return document.getElementById('table')
+		.getElementsByTagName('tbody')[0]
+		.getElementsByTagName('tr')[row]
+		.getElementsByTagName('td')[col];
+}
+
+function rhythm_click(e) {
+	let c = e.target;
+	let p = parseInt(c.dataset.p);
+	let t = parseInt(c.dataset.t);
+	pattern[p][t] = !pattern[p][t];
+	if (pattern[p][t]) {
+		c.classList.add('active');
+	} else {
+		c.classList.remove('active');
+	}
+	start_timer();
+}
+
+function init() {
+	pattern = [];
+	for (let p = 0; p < 12; p++) {
+		let r = [];
+		for (let t = 0; t < 16; t++) {
+			r.push(false);
+			let c = cell(p,2+t);
+			c.dataset.p = p;
+			c.dataset.t = t;
+			c.onclick = rhythm_click;
+		}
+		pattern.push(r);
+	}
+}
+
+window.onload = init;
+
+</script>
+<style>
+
+th {
+	border: solid black 1px;
+}
+td {
+	border: solid black 1px;
+	min-width: 15px;
+}
+td.beat {
+	background: #eee;
+}
+td.active {
+	background: #f00;
+}
+td.active.beat {
+	background: #e00;
+}
+table {
+	border-spacing: 0;
+}
+
+</style>
+	</head>
+	<body>
+		<table id="table">
+			<thead>
+			<tr>
+				<th>Pitch classs</th>
+				<th>Quality</th>
+				<th colspan="16">Rhythm</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr>
+				<td>E♭</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>B♭</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>F</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>C</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>G</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>D</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>A</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>E</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>B</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>G♭</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>D♭</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr><tr>
+				<td>A♭</td>
+				<td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+			</tr>
+			</tbody>
+		</table>
+	</body>
+</html>
