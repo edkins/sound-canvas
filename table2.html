@@ -103,7 +103,7 @@ function rhythm_click(e) {
 	if (!pattern[p][t] && last_target === c && ctx.currentTime - last_t < 0.25) {
 		for (t = 0; t < beats; t++) {
 			pattern[p][t] = false;
-			cell(p, 2+t).classList.remove('active');
+			cell(p, 3+t).classList.remove('active');
 		}
 		c = undefined;
 		t = undefined;
@@ -124,7 +124,7 @@ function rhythm_click(e) {
 
 	let chord = describe_chord_quality();
 	for (let p = 0; p < 12; p++) {
-		let qc = cell(p,1);
+		let qc = cell(p,2);
 		if (chord.contains[p]) {
 			qc.classList.add('active');
 		} else {
@@ -139,12 +139,12 @@ function rhythm_click(e) {
 		text = chord.quality;
 	} else if (chord.root !== undefined && chord.quality !== undefined) {
 		if (chord.count === 2) {
-			text = chord.quality + ' on ' + cell(chord.root,0).textContent;
+			text = chord.quality + ' on ' + cell(chord.root,1).textContent;
 		} else {
-			text = cell(chord.root,0).textContent + ' ' + chord.quality;
+			text = cell(chord.root,1).textContent + ' ' + chord.quality;
 		}
 		for (let i = 1; i < chord.candidates.length; i++) {
-			text += ' or ' + cell(chord.candidates[i].root,0).textContent + ' ' + chord.candidates[i].quality;
+			text += ' or ' + cell(chord.candidates[i].root,1).textContent + ' ' + chord.candidates[i].quality;
 		}
 	}
 
@@ -431,12 +431,14 @@ function describe_chord_quality() {
 
 	candidates.sort((a,b) => b.plausibility - a.plausibility);
 
-	chord.root = candidates[0].root;
-	chord.quality = candidates[0].quality;
-	chord.plausibility = candidates[0].plausibility;
-	chord.candidates = candidates;
+	if (candidates.length > 0) {
+		chord.root = candidates[0].root;
+		chord.quality = candidates[0].quality;
+		chord.plausibility = candidates[0].plausibility;
+		chord.candidates = candidates;
+		chord.alt = chord.candidates.length > 1 && (chord.candidates[1].plausibility > 0 || chord.candidates[1].plausibility === chord.candidates[0].plausibility);  // cutoff for whether we advertise alternate
+	}
 
-	chord.alt = chord.candidates.length > 1 && (chord.candidates[1].plausibility > 0 || chord.candidates[1].plausibility === chord.candidates[0].plausibility);  // cutoff for whether we advertise alternate
 	return chord;
 }
 
@@ -473,13 +475,18 @@ function intervals_of(chord,i) {
 
 const pitch_qualities = [
 
-[ '',        '',      'major',     'minor',     '',         'relaxed', '(cancel)',     'bright',    '',    'minor',    'major',    ''],  // unison
-[ '',        '',      '',          'minor',     '',         'pop',     '(rewind)',     '(progress)','pop', '',         'major',    ''],  // fifth
-[ '',        '',      'major',     '(minor)',   '',         '',        '(major)',      'minor',     '',    '',         '',         ''],  // m.3rd
-[ '',        '',      '',          '',          '',         '',        '(minor)',      'major',     '',    'minor',    '(major)',  ''],  // M.3rd
-[ '',        '',      '',          '',          'unstable', '',        '(major)',      '(minor)',   '',    'minor',    '(open)',   'minor~'],  // M
-[ '',        '',      'major~',    '(open)',    'extend',   '',        '(major)',      '(minor)',   '',    '',         '',         ''],  // m
-[ '',        '',      '(minor)',   '(minor~)',  '',         '',        '(neutral)',    '(major)',   '',    '',         '',         '']   // M7
+[ 'dissonant','dissonant','major',     'minor',     '',         'relaxed',  '(cancel)',     'bright',    '',         'minor',    'major',    'dissonant'],  // unison
+[ 'dissonant','dissonant','dissonant', 'minor',     'pop~',     'pop',      '(rewind)',     '(progress)','pop',      'pop~',     'major',    'dissonant'],  // fifth
+[ 'unstable', 'dissonant','major',     '(minor)',   'pop',      'pop',      '(major)',      'minor',     'dissonant','unstable', 'dissonant','dissonant'],  // m.3rd
+[ 'dissonant','dissonant','weird',     'dissonant', 'dissonant','dissonant','(minor)',      'major',     '',         'minor',    '(major)',  'dissonant'],  // M.3rd
+[ 'dissonant','dissonant','dissonant', 'dissonant', '',         'pop',      '()',           'pop',       '()',       'pop',      '',         'dissonant'],  // 2nd
+[ 'dissonant','dissonant','dissonant', 'dissonant', 'unstable','interesting','(major)',     '(minor)',   'cheerful', 'minor',    '(open)',   'minor~'],  // M
+[ 'dissonant','dissonant','major~',    '(open)',    'extend',   'cheerful', '(major)',      '(minor)',   'minor',  'interesting','dissonant','dissonant'],  // m
+[ 'dissonant','dissonant','(minor)',   '(minor~)',  'major',    'minor',    '(neutral)',    '(major)',   'dissonant','dissonant','interesting','dissonant'],  // M7
+[ 'minor',    'major',    'minor',     '(pop)',     '(minor)',  'extend',   '(major)',      '(pop~)',    'minor~',   'minor',    'dissonant','dissonant'],  // m7 or 6
+[ '',         '',         '',          'minor',     'minor',    '(open)',   '()',           '(open)',    'extend',   'major',    '',         ''],  // sus4
+[ '',         '',         'cheerful',  '()',        '(minor)',  'tuneful',  '(open)',       'complete',  '',         '',         '',         ''],  // ** *
+[ '',         '',         '',          'neutral',   '(open)',   'tuneful',  '()',           '()',        'minor',    '',         '',         '']   // * **
 
 ];
 
@@ -506,7 +513,7 @@ function rhythm_over(e) {
 		} else if (chord.alt && p2 === chord.candidates[1].root) {
 			text = 'alt';
 		}
-		cell(p2,1).textContent = text;
+		cell(p2,2).textContent = text;
 	}
 }
 
@@ -516,7 +523,7 @@ function init() {
 		let r = [];
 		for (let t = 0; t < beats; t++) {
 			r.push(false);
-			let c = cell(p,2+t);
+			let c = cell(p,3+t);
 			c.dataset.p = p;
 			c.dataset.t = t;
 			c.onclick = rhythm_click;
@@ -572,6 +579,7 @@ table {
 		<table id="table">
 			<thead>
 			<tr>
+				<th>Key</th>
 				<th>Pitch classs</th>
 				<th style="min-width:200">Quality</th>
 				<th colspan="16">Rhythm</th>
@@ -579,6 +587,7 @@ table {
 			</thead>
 			<tbody>
 			<tr>
+				<td></td>
 				<td>E♭</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -586,6 +595,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>B♭</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -593,6 +603,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>F</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -600,6 +611,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>C</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -607,6 +619,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>G</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -614,6 +627,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>D</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -621,6 +635,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>A</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -628,6 +643,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>E</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -635,6 +651,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>B</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -642,6 +659,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>G♭</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -649,6 +667,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>D♭</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -656,6 +675,7 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
+				<td></td>
 				<td>A♭</td>
 				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
