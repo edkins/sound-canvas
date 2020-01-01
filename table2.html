@@ -14,6 +14,15 @@ let time_window = 0.2;
 let oscs = undefined;
 let gains = undefined;
 let a_hz = 440;
+let current_div = 'basic-chords';
+
+function showdiv(name) {
+	document.getElementById(current_div).classList.add('hidden');
+	document.getElementById(current_div+'-button').classList.remove('active');
+	document.getElementById(name).classList.remove('hidden');
+	document.getElementById(name+'-button').classList.add('active');
+	current_div = name;
+}
 
 function time_to_t(time) {
 	return Math.floor(time / rhythm);
@@ -110,8 +119,14 @@ function rhythm_click(e) {
 	let text = 'unknown';
 	if (chord.count === 0) {
 		text = 'silence';
+	} else if (chord.root === undefined && chord.quality !== undefined) {
+		text = chord.quality;
 	} else if (chord.root !== undefined && chord.quality !== undefined) {
-		text = cell(chord.root,0).textContent + ' ' + chord.quality;
+		if (chord.count === 2) {
+			text = chord.quality + ' on ' + cell(chord.root,0).textContent;
+		} else {
+			text = cell(chord.root,0).textContent + ' ' + chord.quality;
+		}
 		if (chord.alt !== undefined) {
 			text += ' or ' + cell(chord.alt.root,0).textContent + ' ' + chord.alt.quality;
 		}
@@ -153,59 +168,93 @@ function describe_chord_quality() {
 	if (fifths.length === 1) {
 		chord.root = fifths[0];
 		if (chord.count === 2) {
-			chord.quality = '5';
+			chord.quality = 'fifth';
 		} else if (chord.count === 3 && maj_thirds.length === 1 && maj_thirds[0] === chord.root) {
 			chord.quality = 'maj';
 		} else if (chord.count === 3 && maj_thirds.length === 1 && min_thirds[0] === chord.root) {
 			chord.quality = 'min';
+		} else if (chord.count === 4 && maj_thirds.length === 1 && maj_thirds[0] === chord.root && min_thirds.length === 2) {
+			chord.quality = '7';
+		} else if (chord.count === 4 && maj_thirds.length === 3 && min_thirds.length === 1 && min_thirds[0] === chord.root) {
+			chord.quality = 'mM7';
+		} else if (chord.count === 4 && maj_thirds.length === 1 && min_thirds.length === 2 && maj_thirds[0] !== chord.root) {
+			chord.quality = 'm6';
+			chord.alt = {
+				quality:'ø7',
+				root:(chord.root+3)%12
+			};
 		}
 	} else if (fifths.length === 2) {
-		// Which is it?
+		// Which is the root?
 		let i = interval(fifths[0], fifths[1]);
 		if (i === FIFTH) {
 			chord.root = fifths[1];
-			chord.quality = 'sus4';
-			chord.alt = {
-				root: fifths[0],
-				quality: 'sus2'
+			if (chord.count === 3) { 
+				chord.quality = 'sus4';
+				chord.alt = {
+					root: fifths[0],
+					quality: 'sus2'
+				}
 			}
 		} else if (i === -FIFTH) {
 			chord.root = fifths[0];
-			chord.quality = 'sus2';
-			chord.alt = {
-				root: fifths[1],
-				quality: 'sus2'
+			if (chord.count === 3) { 
+				chord.quality = 'sus2';
+				chord.alt = {
+					root: fifths[1],
+					quality: 'sus2'
+				}
 			}
 		} else if (i === MINOR_THIRD) {
 			chord.root = fifths[1];
-			chord.quality = '6';
-			chord.alt = {
-				root: fifths[0],
-				quality: 'min7'
+			if (chord.count === 4) {
+				chord.quality = '6';
+				chord.alt = {
+					root: fifths[0],
+					quality: 'min7'
+				}
 			}
 		} else if (i === -MINOR_THIRD) {
 			chord.root = fifths[0];
-			chord.quality = '6';
-			chord.alt = {
-				root: fifths[1],
-				quality: 'min7'
+			if (chord.count === 4) { 
+				chord.quality = '6';
+				chord.alt = {
+					root: fifths[1],
+					quality: 'min7'
+				}
 			}
 		} else if (i === MAJOR_THIRD) {
 			chord.root = fifths[0];
-			chord.quality = 'M7';
+			if (chord.count === 4) { 
+				chord.quality = 'M7';
+			}
 		} else if (i === -MAJOR_THIRD) {
 			chord.root = fifths[1];
-			chord.quality = 'M7';
+			if (chord.count === 4) { 
+				chord.quality = 'M7';
+			}
 		}
 	} else if (fifths.length === 3 && chord.count === 4 && min_thirds.length === 1) {
 		// Four notes all adjacent to each other in the circle of fifths
 		// Pick the 3rd of these and call it a 7sus4
 		chord.root = (min_thirds[0] + 11) % 12;
 		chord.quality = '7sus4';
-	} else if (min_thirds.length === 1) {
+	} else if (chord.count === 3 && maj_thirds.length === 3) {
+		// Won't try and pick a root here because there are 3 symmetrical possibilities
+		chord.quality = 'aug';
+	} else if (chord.count === 3 && maj_thirds.length === 0 && min_thirds.length === 2) {
+		chord.quality = 'dim';
+		if ((min_thirds[0] + 9) % 12 === min_thirds[0]) {
+			chord.root = min_thirds[0];
+		} else {
+			chord.root = min_thirds[1];
+		}
+	} else if (min_thirds.length === 1 && chord.count === 2) {
 		chord.root = min_thirds[0];
-	} else if (maj_thirds.length === 1) {
+		chord.quality = 'min.third';
+	} else if (maj_thirds.length === 1 && chord.count === 2) {
 		chord.root = maj_thirds[0];
+		chord.quality = 'Maj.third';
 	}
 
 	return chord;
@@ -290,6 +339,9 @@ window.onload = init;
 </script>
 <style>
 
+.button.active {
+	background: #f00;
+}
 th {
 	border: solid black 1px;
 }
@@ -317,6 +369,9 @@ td.active.qual {
 }
 table {
 	border-spacing: 0;
+}
+.hidden {
+	display: none;
 }
 
 </style>
@@ -423,34 +478,39 @@ table {
 			<span id="chord">silence</span>
 		</div>
 		<div>
+			<span class="button active" id="basic-chords-button" onclick="showdiv('basic-chords')">Basic chords</span>
+			<span class="button" id="weird-chords-button" onclick="showdiv('weird-chords')">Weird chords</span>
+			<span class="button" id="ninth-chords-button" onclick="showdiv('ninth-chords')">Ninth chords</span>
+		</div>
+		<div id="basic-chords">
 			<table>
 				<thead>
-					<tr>
-						<th></th>
-						<th>Maj</th>
-						<th></th>
-						<th>7&nbsp;&nbsp;&nbsp;</th>
-						<th></th>
-						<th>M7</th>
-						<th></th>
-						<th>6&nbsp;&nbsp;&nbsp;</th>
-						<th></th>
-						<th>min</th>
-						<th></th>
-						<th>min7</th>
-						<th></th>
-						<th>mM7</th>
-						<th></th>
-						<th>sus4</th>
-						<th></th>
-						<th>7sus4</th>
-						<th></th>
-						<th>sus2</th>
-						<th></th>
-						<th>dim</th>
-						<th></th>
-						<th>aug</th>
-					</tr>
+				<tr>
+					<th></th>
+					<th>Maj</th>
+					<th></th>
+					<th>7&nbsp;&nbsp;&nbsp;</th>
+					<th></th>
+					<th>M7</th>
+					<th></th>
+					<th>6&nbsp;&nbsp;&nbsp;</th>
+					<th></th>
+					<th>min</th>
+					<th></th>
+					<th>min7</th>
+					<th></th>
+					<th>sus4</th>
+					<th></th>
+					<th>7sus4</th>
+					<th></th>
+					<th>sus2</th>
+					<th></th>
+					<th>It6</th>
+					<th></th>
+					<th>7no3</th>
+					<th></th>
+					<th>m7no5</th>
+				</tr>
 				</thead>
 				<tbody>
 				<tr>
@@ -477,32 +537,6 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td class="active"></td>
-					<td></td>
-					<td></td>
-				</tr>
-				<tr>
-					<td>&nbsp;</td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
@@ -531,7 +565,33 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td class="active"></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
 				</tr>
 				<tr>
 					<td>min.third</td>
@@ -547,17 +607,17 @@ table {
 					<td></td>
 					<td class="boring"></td>
 					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
 					<td class="boring"></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td class="boring"></td>
-					<td></td>
-					<td></td>
 				</tr>
 				<tr>
 					<td>&nbsp;</td>
@@ -575,15 +635,15 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td></td>
-					<td></td>
 					<td class="active"></td>
 					<td></td>
 					<td></td>
 					<td></td>
+					<td class="active"></td>
 					<td></td>
+					<td class="active"></td>
 					<td></td>
-					<td></td>
+					<td class="active"></td>
 				</tr>
 				<tr>
 					<td>&nbsp;</td>
@@ -599,11 +659,11 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td></td>
-					<td></td>
 					<td class="active"></td>
 					<td></td>
 					<td class="active"></td>
+					<td></td>
+					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
@@ -657,9 +717,9 @@ table {
 					<td></td>
 					<td class="boring"></td>
 					<td></td>
+					<td></td>
+					<td></td>
 					<td class="boring"></td>
-					<td></td>
-					<td></td>
 					<td></td>
 					<td></td>
 				</tr>
@@ -681,9 +741,9 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td></td>
-					<td></td>
 					<td class="active"></td>
+					<td></td>
+					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
@@ -735,11 +795,11 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
-					<td></td>
 					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
 				</tr>
 				<tr>
 					<td>&nbsp;</td>
@@ -755,7 +815,7 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td class="active"></td>
+					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
@@ -781,8 +841,6 @@ table {
 					<td></td>
 					<td>2</td>
 					<td></td>
-					<td>1</td>
-					<td></td>
 					<td>2</td>
 					<td></td>
 					<td>3</td>
@@ -791,7 +849,9 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
+					<td>1</td>
 					<td></td>
+					<td>1</td>
 				</tr>
 				<tr>
 					<td>min.thirds</td>
@@ -807,17 +867,17 @@ table {
 					<td></td>
 					<td>2</td>
 					<td></td>
+					<td></td>
+					<td></td>
 					<td>1</td>
 					<td></td>
 					<td></td>
 					<td></td>
+					<td></td>
+					<td></td>
 					<td>1</td>
 					<td></td>
-					<td></td>
-					<td></td>
-					<td>2</td>
-					<td></td>
-					<td></td>
+					<td>1</td>
 				</tr>
 				<tr>
 					<td>Maj.thirds</td>
@@ -833,17 +893,17 @@ table {
 					<td></td>
 					<td>1</td>
 					<td></td>
-					<td>3</td>
 					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
+					<td>1</td>
 					<td></td>
 					<td></td>
 					<td></td>
-					<td>3</td>
+					<td></td>
 				</tr>
 				<tr>
 					<td>whole tone</td>
@@ -859,17 +919,17 @@ table {
 					<td></td>
 					<td>1</td>
 					<td></td>
-					<td></td>
-					<td></td>
 					<td>1</td>
 					<td></td>
 					<td>2</td>
 					<td></td>
 					<td>1</td>
 					<td></td>
+					<td>1</td>
 					<td></td>
+					<td>1</td>
 					<td></td>
-					<td></td>
+					<td>1</td>
 				</tr>
 				<tr>
 					<td>semitone</td>
@@ -885,7 +945,7 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
-					<td>1</td>
+					<td></td>
 					<td></td>
 					<td></td>
 					<td></td>
@@ -914,6 +974,706 @@ table {
 					<td></td>
 					<td></td>
 					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				</tbody>
+			</table>
+		</div>
+		<div id="weird-chords" class="hidden">
+			<table>
+				<thead>
+				<tr>
+					<th></th>
+					<th>m6</th>
+					<th></th>
+					<th>mM7</th>
+					<th></th>
+					<th>mM7no5</th>
+					<th></th>
+					<th>dim</th>
+					<th></th>
+					<th>ø7</th>
+					<th></th>
+					<th>dim7</th>
+					<th></th>
+					<th>7♭5</th>
+					<th></th>
+					<th>aug</th>
+					<th></th>
+					<th>7+</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+				</tr>
+				<tr>
+					<td>min.third</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>root</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>fifth</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.third</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>fifths</td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>min.thirds</td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>4</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.thirds</td>
+					<td>1</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>3</td>
+				</tr>
+				<tr>
+					<td>whole tone</td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
+				</tr>
+				<tr>
+					<td>semitone</td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>tritone</td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+				</tr>
+				</tbody>
+			</table>
+		</div>
+		<div id="ninth-chords" class="hidden">
+			<table>
+				<thead>
+				<tr>
+					<th></th>
+					<th>9</th>
+					<th></th>
+					<th>M9</th>
+					<th></th>
+					<th>7♭9</th>
+					<th></th>
+					<th>m9</th>
+					<th></th>
+					<th>6/9</th>
+					<th></th>
+					<th>add9</th>
+					<th></th>
+					<th>madd9</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>min.third</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>min.7</td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>root</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>fifth</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td class="active"></td>
+				</tr>
+				<tr>
+					<td>&nbsp;</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.third</td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td class="boring"></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>Maj.7</td>
+					<td></td>
+					<td></td>
+					<td class="active"></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>fifths</td>
+					<td>2</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>4</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+				</tr>
+				<tr>
+					<td>min.thirds</td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>4</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+				</tr>
+				<tr>
+					<td>Maj.thirds</td>
+					<td>2</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+				</tr>
+				<tr>
+					<td>whole tone</td>
+					<td>3</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td>2</td>
+					<td></td>
+					<td>1</td>
+				</tr>
+				<tr>
+					<td>semitone</td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>1</td>
+				</tr>
+				<tr>
+					<td>tritone</td>
+					<td>1</td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
 					<td></td>
 					<td></td>
 					<td></td>
