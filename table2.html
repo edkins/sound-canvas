@@ -32,8 +32,9 @@ function t_to_time(t) {
 	return t * rhythm;
 }
 
-function schedule_note(p, t) {
+function schedule_note(p, t, octave) {
 	let time = t_to_time(t);
+	oscs[p].detune.setValueAtTime(1200 * octave, time);
 	gains[p].gain.setValueAtTime(0, time);
 	gains[p].gain.linearRampToValueAtTime(0.3, time + 0.005);
 	gains[p].gain.linearRampToValueAtTime(0, time + 0.05);
@@ -44,8 +45,9 @@ function timer_func() {
 	let window_t = time_to_t(ctx.currentTime + time_window);
 	for (let t = current_t; t < window_t; t++) {
 		for (let p = 0; p < 12; p++) {
-			if (pattern[p][t % beats]) {
-				schedule_note(p, t);
+			let octave = pattern[p][t % beats];
+			if (octave !== undefined) {
+				schedule_note(p, t, octave);
 			}
 		}
 	}
@@ -99,10 +101,12 @@ function rhythm_click(e) {
 	let p = parseInt(c.dataset.p);
 	let t = parseInt(c.dataset.t);
 
+	start_timer();
+
 	// Detect double clicks
-	if (!pattern[p][t] && last_target === c && ctx.currentTime - last_t < 0.25) {
+	if (pattern[p][t] === undefined && last_target === c && ctx.currentTime - last_t < 0.25) {
 		for (t = 0; t < beats; t++) {
-			pattern[p][t] = false;
+			pattern[p][t] = undefined;
 			cell(p, 3+t).classList.remove('active');
 		}
 		c = undefined;
@@ -110,16 +114,20 @@ function rhythm_click(e) {
 		last_target = undefined;
 		last_t = undefined;
 	} else {
-		pattern[p][t] = !pattern[p][t];
-		if (pattern[p][t]) {
+		if (pattern[p][t] === undefined) {
+			if (e.shiftKey) {
+				pattern[p][t] = 1;
+			} else {
+				pattern[p][t] = 0;
+			}
 			c.classList.add('active');
 		} else {
+			pattern[p][t] = undefined;
 			c.classList.remove('active');
 			last_target = c;
 			last_t = ctx.currentTime;
 		}
 	}
-	start_timer();
 	rhythm_over(e);
 
 	let chord = describe_chord_quality();
@@ -165,7 +173,7 @@ function describe_chord_quality() {
 	for (let p = 0; p < 12; p++) {
 		let used = false;
 		for (let t = 0; t < beats; t++) {
-			used = used || pattern[p][t];
+			used = used || (pattern[p][t] !== undefined);
 		}
 		chord.contains.push(used);
 		if (used) chord.count++;
@@ -484,9 +492,9 @@ const pitch_qualities = [
 [ 'dissonant','dissonant','major~',    '(open)',    'extend',   'cheerful', '(major)',      '(minor)',   'minor',  'interesting','dissonant','dissonant'],  // m
 [ 'dissonant','dissonant','(minor)',   '(minor~)',  'major',    'minor',    '(neutral)',    '(major)',   'dissonant','dissonant','interesting','dissonant'],  // M7
 [ 'minor',    'major',    'minor',     '(pop)',     '(minor)',  'extend',   '(major)',      '(pop~)',    'minor~',   'minor',    'dissonant','dissonant'],  // m7 or 6
-[ '',         '',         '',          'minor',     'minor',    '(open)',   '()',           '(open)',    'extend',   'major',    '',         ''],  // sus4
+[ 'dissonant','dissonant','dissonant', 'minor',     'minorish', '(open)',   '()',           '(open)',    'extend',   'major',    'dissonant','dissonant'],  // sus4
 [ '',         '',         'cheerful',  '()',        '(minor)',  'tuneful',  '(open)',       'complete',  '',         '',         '',         ''],  // ** *
-[ '',         '',         '',          'neutral',   '(open)',   'tuneful',  '()',           '()',        'minor',    '',         '',         '']   // * **
+[ '',         '',         '',          'neutral',   '(open)',   'tuneful',  '()',           '()',        'minor',    'dissonant','interesting','']   // * **
 
 ];
 
@@ -506,7 +514,7 @@ function rhythm_over(e) {
 	let quality = describe_pitch_quality(chord,p);
 	for (let p2 = 0; p2 < 12; p2++) {
 		let text = '';
-		if (p2 === p && quality !== '' && (pattern[p][t] || !chord.contains[p])) {
+		if (p2 === p && quality !== '' && (pattern[p][t] !== undefined || !chord.contains[p])) {
 			text = quality;
 		} else if (p2 === chord.root) {
 			text = 'root';
@@ -522,7 +530,7 @@ function init() {
 	for (let p = 0; p < 12; p++) {
 		let r = [];
 		for (let t = 0; t < beats; t++) {
-			r.push(false);
+			r.push(undefined);
 			let c = cell(p,3+t);
 			c.dataset.p = p;
 			c.dataset.t = t;
@@ -543,6 +551,9 @@ window.onload = init;
 }
 th {
 	border: solid black 1px;
+}
+th.active {
+	background: #8cf;
 }
 td {
 	border: solid black 1px;
@@ -582,7 +593,7 @@ table {
 				<th>Key</th>
 				<th>Pitch classs</th>
 				<th style="min-width:200">Quality</th>
-				<th colspan="16">Rhythm</th>
+				<th colspan="16" class="active">Rhythm</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -697,10 +708,11 @@ table {
 			<span class="button" id="weird-chords-button" onclick="showdiv('weird-chords')">Weird chords</span>
 			<span class="button" id="ninth-chords-button" onclick="showdiv('ninth-chords')">Ninth chords</span>
 			<span class="button" id="eleventh-chords-button" onclick="showdiv('eleventh-chords')">Eleventh chords</span>
+			<span class="button" id="scales-button" onclick="showdiv('scales')">Scales</span>
 		</div>
 		<div id="ui">
 			<p>
-			Click a square to play a sound. It will play in a loop, so you can construct a nice rhythm.
+			Click a square to play a sound. It will play in a loop, so you can construct a nice rhythm. Shift-click to play a particular note an octave higher.
 			</p>
 			<p>
 			Click on an already active square to remove the sound. Double click an active square to remove the entire row.
@@ -2044,6 +2056,8 @@ table {
 					<th></th>
 					<th>7♭9#11</th>
 				</tr>
+				</thead>
+				<tbody>
 				<tr>
 					<td>&nbsp;</td>
 					<td></td>
@@ -2296,7 +2310,158 @@ table {
 					<td></td>
 					<td>3</td>
 				</tr>
+				</tbody>
+			</table>
+		</div>
+		<div id="scales" class="hidden">
+			<table>
+				<thead>
+				<tr>
+					<th>Pentatonic</th>
+					<th>Major</th>
+					<th>Mixolydian</th>
+					<th>Dorian</th>
+					<th>Minor</th>
+					<th>Whole tone</th>
+					<th>Diminished</th>
+					<th>Hexatonic Blues</th>
+					<th>Double harmonic</th>
+				</tr>
 				</thead>
+				<tbody>
+				<tr>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>6</td>
+					<td>5</td>
+					<td>6</td>
+					<td></td>
+					<td>6</td>
+				</tr>
+				<tr>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>3</td>
+					<td>3</td>
+					<td></td>
+					<td>3</td>
+					<td>2</td>
+					<td></td>
+				</tr>
+				<tr>
+					<td></td>
+					<td></td>
+					<td>7</td>
+					<td>7</td>
+					<td>7desc</td>
+					<td>6</td>
+					<td></td>
+					<td>6</td>
+					<td></td>
+				</tr>
+				<tr>
+					<td></td>
+					<td>4</td>
+					<td>4</td>
+					<td>4</td>
+					<td>4</td>
+					<td></td>
+					<td>4</td>
+					<td>3</td>
+					<td>4</td>
+				</tr>
+				<tr>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+					<td>1</td>
+				</tr>
+				<tr>
+					<td>4</td>
+					<td>5</td>
+					<td>5</td>
+					<td>5</td>
+					<td>5</td>
+					<td></td>
+					<td></td>
+					<td>5</td>
+					<td>5</td>
+				</tr>
+				<tr>
+					<td>2</td>
+					<td>2</td>
+					<td>2</td>
+					<td>2</td>
+					<td>2</td>
+					<td>2</td>
+					<td>2</td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>5</td>
+					<td>6</td>
+					<td>6</td>
+					<td>6</td>
+					<td></td>
+					<td></td>
+					<td>7</td>
+					<td></td>
+					<td></td>
+				</tr>
+				<tr>
+					<td>3</td>
+					<td>3</td>
+					<td>3</td>
+					<td></td>
+					<td></td>
+					<td>3</td>
+					<td></td>
+					<td></td>
+					<td>3</td>
+				</tr>
+				<tr>
+					<td></td>
+					<td>7</td>
+					<td></td>
+					<td></td>
+					<td>7asc</td>
+					<td></td>
+					<td>8</td>
+					<td></td>
+					<td>7</td>
+				</tr>
+				<tr>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>4</td>
+					<td>5</td>
+					<td>4</td>
+					<td></td>
+				</tr>
+				<tr>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td></td>
+					<td>2</td>
+				</tr>
+				</tbody>
 			</table>
 		</div>
 	</body>
