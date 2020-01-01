@@ -25,8 +25,9 @@ function t_to_time(t) {
 
 function schedule_note(p, t) {
 	let time = t_to_time(t);
-	gains[p].gain.setValueAtTime(0.5, time);
-	gains[p].gain.setValueAtTime(0, time + 0.05);
+	gains[p].gain.setValueAtTime(0, time);
+	gains[p].gain.linearRampToValueAtTime(0.3, time + 0.005);
+	gains[p].gain.linearRampToValueAtTime(0, time + 0.05);
 }
 
 function timer_func() {
@@ -93,18 +94,127 @@ function rhythm_click(e) {
 		c.classList.remove('active');
 	}
 	start_timer();
+	rhythm_over(e);
+
+	let chord = describe_chord_quality();
+	for (let p = 0; p < 12; p++) {
+		let qc = cell(p,1);
+		if (chord.contains[p]) {
+			qc.classList.add('active');
+		} else {
+			qc.classList.remove('active');
+		}
+	}
+}
+
+function describe_chord_quality() {
+	let chord = {contains:[],count:0};
+	
+	// First find out which notes are actually used
+	for (let p = 0; p < 12; p++) {
+		let used = false;
+		for (let t = 0; t < beats; t++) {
+			used = used || pattern[p][t];
+		}
+		chord.contains.push(used);
+		if (used) chord.count++;
+	}
+
+	if (chord.count === 0) {
+		// No notes. Nothing more to say about this chord.
+		return chord;
+	}
+
+	if (chord.count === 1) {
+		// Just one note. That's obviously the root.
+		for (let p = 0; p < 12; p++) {
+			if (chord.contains[p]) chord.root = p;
+		}
+		return chord;
+	}
+
+	// Search for root by looking for promising intervals
+	let fifths = intervals_of(chord, FIFTH);
+	let maj_thirds = intervals_of(chord, MAJOR_THIRD);
+	let min_thirds = intervals_of(chord, MINOR_THIRD);
+	if (fifths.length === 1) {
+		chord.root = fifths[0];
+	} else if (maj_thirds.length === 1) {
+		chord.root = maj_thirds[0];
+	} else if (min_thirds.length === 1) {
+		chord.root = min_thirds[0];
+	}
+
+	return chord;
+}
+
+// number of fifths to get from p to q. Returns a number between -5 and 6 inclusive.
+const UNISON = 0;
+const FIFTH = 1;
+const MAJOR_THIRD = 4;
+const MINOR_THIRD = -3;
+const TONE = 2;
+const SEMITONE = 5;
+const TRITONE = 6;
+function interval(p,q) {
+	let i = (q + 12 - p) % 12;
+	if (i > 6) {
+		i -= 12;
+	}
+	return i;
+}
+
+function add_interval(p,i) {
+	return (p + 12 + i) % 12;
+}
+
+function intervals_of(chord,i) {
+	let result = [];
+	for (let p = 0; p < 12; p++) {
+		let q = add_interval(p, i);
+		if (chord.contains[p] && chord.contains[q]) {
+			result.push(p);
+		}
+	}
+	return result;
+}
+
+function describe_pitch_quality(chord,p) {
+	if (chord.count === 1) {
+		let i = interval(chord.root, p);
+		if (i === FIFTH) return 'bright';
+		if (i === -FIFTH) return 'relaxed';
+	}
+	return '';
+}
+
+function rhythm_over(e) {
+	let c = e.target;
+	let p = parseInt(c.dataset.p);
+	let t = parseInt(c.dataset.t);
+	let chord = describe_chord_quality();
+	for (let p2 = 0; p2 < 12; p2++) {
+		let text = '';
+		if (p2 === chord.root) {
+			text = 'root';
+		} else if (p2 === p && !chord.contains[p]) {
+			text = describe_pitch_quality(chord,p);
+		}
+		cell(p2,1).textContent = text;
+	}
 }
 
 function init() {
 	pattern = [];
 	for (let p = 0; p < 12; p++) {
 		let r = [];
-		for (let t = 0; t < 16; t++) {
+		for (let t = 0; t < beats; t++) {
 			r.push(false);
 			let c = cell(p,2+t);
 			c.dataset.p = p;
 			c.dataset.t = t;
 			c.onclick = rhythm_click;
+			c.onmouseover = rhythm_over;
 		}
 		pattern.push(r);
 	}
@@ -131,6 +241,12 @@ td.active {
 td.active.beat {
 	background: #e00;
 }
+td.qual {
+	background: #fff;
+}
+td.active.qual {
+	background: #fee;
+}
 table {
 	border-spacing: 0;
 }
@@ -149,84 +265,84 @@ table {
 			<tbody>
 			<tr>
 				<td>E♭</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>B♭</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>F</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>C</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>G</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>D</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>A</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>E</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>B</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>G♭</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>D♭</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td>A♭</td>
-				<td></td>
+				<td class="qual"></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
