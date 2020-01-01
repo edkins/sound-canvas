@@ -14,7 +14,7 @@ let time_window = 0.4;
 let oscs = undefined;
 let gains = undefined;
 let a_hz = 440;
-let current_div = 'basic-chords';
+let current_div = 'ui';
 
 function showdiv(name) {
 	document.getElementById(current_div).classList.add('hidden');
@@ -92,15 +92,32 @@ function cell(row,col) {
 		.getElementsByTagName('td')[col];
 }
 
+let last_target = undefined;
+let last_t = undefined;
 function rhythm_click(e) {
 	let c = e.target;
 	let p = parseInt(c.dataset.p);
 	let t = parseInt(c.dataset.t);
-	pattern[p][t] = !pattern[p][t];
-	if (pattern[p][t]) {
-		c.classList.add('active');
+
+	// Detect double clicks
+	if (!pattern[p][t] && last_target === c && ctx.currentTime - last_t < 0.25) {
+		for (t = 0; t < beats; t++) {
+			pattern[p][t] = false;
+			cell(p, 2+t).classList.remove('active');
+		}
+		c = undefined;
+		t = undefined;
+		last_target = undefined;
+		last_t = undefined;
 	} else {
-		c.classList.remove('active');
+		pattern[p][t] = !pattern[p][t];
+		if (pattern[p][t]) {
+			c.classList.add('active');
+		} else {
+			c.classList.remove('active');
+			last_target = c;
+			last_t = ctx.currentTime;
+		}
 	}
 	start_timer();
 	rhythm_over(e);
@@ -162,6 +179,23 @@ function describe_chord_quality() {
 	let tritones = intervals_of(chord, TRITONE);
 
 	chord.intervals = {fifths, maj_thirds, min_thirds, whole_tones, semitones, tritones};
+	chord.pitch_qualities = undefined;
+
+	for (let i = 0; i < pitch_qualities.length; i++) {
+		for (let offset = 0; offset < 12; offset++) {
+			let matches = true;
+			for (let j = 0; j < 12; j++) {
+				let pattern = pitch_qualities[i][(offset + j) % 12].substring(0,1) === '(';
+				matches = matches && (pattern === chord.contains[j]);
+			}
+			if (matches) {
+				chord.pitch_qualities = [];
+				for (let j = 0; j < 12; j++) {
+					chord.pitch_qualities[j] = pitch_qualities[i][(offset + j) % 12];
+				}
+			}
+		}
+	}
 
 	if (chord.count === 0) {
 		// No notes. Nothing more to say about this chord.
@@ -437,13 +471,24 @@ function intervals_of(chord,i) {
 	return result;
 }
 
+const pitch_qualities = [
+
+[ '',        '',      'major',     'minor',     '',         'relaxed', '(cancel)',     'bright',    '',    'minor',    'major',    ''],  // unison
+[ '',        '',      '',          'minor',     '',         'pop',     '(rewind)',     '(progress)','pop', '',         'major',    ''],  // fifth
+[ '',        '',      'major',     '(minor)',   '',         '',        '(major)',      'minor',     '',    '',         '',         ''],  // m.3rd
+[ '',        '',      '',          '',          '',         '',        '(minor)',      'major',     '',    'minor',    '(major)',  ''],  // M.3rd
+[ '',        '',      '',          '',          'unstable', '',        '(major)',      '(minor)',   '',    'minor',    '(open)',   'minor~'],  // M
+[ '',        '',      'major~',    '(open)',    'extend',   '',        '(major)',      '(minor)',   '',    '',         '',         ''],  // m
+[ '',        '',      '(minor)',   '(minor~)',  '',         '',        '(neutral)',    '(major)',   '',    '',         '',         '']   // M7
+
+];
+
 function describe_pitch_quality(chord,p) {
-	if (chord.count === 1) {
-		let i = interval(chord.root, p);
-		if (i === FIFTH) return 'bright';
-		if (i === -FIFTH) return 'relaxed';
+	if (chord.pitch_qualities !== undefined) {
+		return chord.pitch_qualities[p];
+	} else {
+		return '';
 	}
-	return '';
 }
 
 function rhythm_over(e) {
@@ -451,14 +496,15 @@ function rhythm_over(e) {
 	let p = parseInt(c.dataset.p);
 	let t = parseInt(c.dataset.t);
 	let chord = describe_chord_quality();
+	let quality = describe_pitch_quality(chord,p);
 	for (let p2 = 0; p2 < 12; p2++) {
 		let text = '';
-		if (p2 === chord.root) {
+		if (p2 === p && quality !== '' && (pattern[p][t] || !chord.contains[p])) {
+			text = quality;
+		} else if (p2 === chord.root) {
 			text = 'root';
 		} else if (chord.alt && p2 === chord.candidates[1].root) {
 			text = 'alt';
-		} else if (p2 === p && !chord.contains[p]) {
-			text = describe_pitch_quality(chord,p);
 		}
 		cell(p2,1).textContent = text;
 	}
@@ -527,7 +573,7 @@ table {
 			<thead>
 			<tr>
 				<th>Pitch classs</th>
-				<th>Quality</th>
+				<th style="min-width:200">Quality</th>
 				<th colspan="16">Rhythm</th>
 			</tr>
 			</thead>
@@ -626,12 +672,24 @@ table {
 			<span id="structure"></span>&nbsp;
 		</div>
 		<div>
-			<span class="button active" id="basic-chords-button" onclick="showdiv('basic-chords')">Basic chords</span>
+			<span class="button active" id="ui-button" onclick="showdiv('ui')">User Interface</span>
+			<span class="button" id="basic-chords-button" onclick="showdiv('basic-chords')">Basic chords</span>
 			<span class="button" id="weird-chords-button" onclick="showdiv('weird-chords')">Weird chords</span>
 			<span class="button" id="ninth-chords-button" onclick="showdiv('ninth-chords')">Ninth chords</span>
 			<span class="button" id="eleventh-chords-button" onclick="showdiv('eleventh-chords')">Eleventh chords</span>
 		</div>
-		<div id="basic-chords">
+		<div id="ui">
+			<p>
+			Click a square to play a sound. It will play in a loop, so you can construct a nice rhythm.
+			</p>
+			<p>
+			Click on an already active square to remove the sound. Double click an active square to remove the entire row.
+			</p>
+			<p>
+			Once you've placed some notes, you'll notice that hovering over squares may suggest a word in the "quality" column. This is a (very vague) description of what it would sound like to add that note (or remove it if it's in parentheses). After you play around with the program for some time you'll get a better idea what these words mean.
+			</p>
+		</div>
+		<div id="basic-chords" class="hidden">
 			<table>
 				<thead>
 				<tr>
