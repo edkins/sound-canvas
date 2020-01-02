@@ -15,6 +15,7 @@ let oscs = undefined;
 let gains = undefined;
 let a_hz = 440;
 let current_div = 'ui';
+let current_page = 0;
 
 function showdiv(name) {
 	document.getElementById(current_div).classList.add('hidden');
@@ -45,7 +46,7 @@ function timer_func() {
 	let window_t = time_to_t(ctx.currentTime + time_window);
 	for (let t = current_t; t < window_t; t++) {
 		for (let p = 0; p < 12; p++) {
-			let octave = pattern[p][t % beats];
+			let octave = pattern[current_page][p][t % beats];
 			if (octave !== undefined) {
 				schedule_note(p, t, octave);
 			}
@@ -98,38 +99,42 @@ let last_target = undefined;
 let last_t = undefined;
 function rhythm_click(e) {
 	let c = e.target;
+	let page = parseInt(c.dataset.page);
 	let p = parseInt(c.dataset.p);
 	let t = parseInt(c.dataset.t);
 
 	start_timer();
 
 	// Detect double clicks
-	if (pattern[p][t] === undefined && last_target === c && ctx.currentTime - last_t < 0.25) {
+	if (pattern[page][p][t] === undefined && last_target === c && ctx.currentTime - last_t < 0.25) {
 		for (t = 0; t < beats; t++) {
-			pattern[p][t] = undefined;
-			cell(p, 3+t).classList.remove('active');
+			pattern[page][p][t] = undefined;
+			cell(p, 3+beats*page+t).classList.remove('active');
 		}
 		c = undefined;
 		t = undefined;
 		last_target = undefined;
 		last_t = undefined;
 	} else {
-		if (pattern[p][t] === undefined) {
+		if (pattern[page][p][t] === undefined) {
 			if (e.shiftKey) {
-				pattern[p][t] = 1;
+				pattern[page][p][t] = 1;
 			} else {
-				pattern[p][t] = 0;
+				pattern[page][p][t] = 0;
 			}
 			c.classList.add('active');
 		} else {
-			pattern[p][t] = undefined;
+			pattern[page][p][t] = undefined;
 			c.classList.remove('active');
 			last_target = c;
 			last_t = ctx.currentTime;
 		}
 	}
 	rhythm_over(e);
+	update_chord_text();
+}
 
+function update_chord_text() {
 	let chord = describe_chord_quality();
 	for (let p = 0; p < 12; p++) {
 		let qc = cell(p,2);
@@ -173,7 +178,7 @@ function describe_chord_quality() {
 	for (let p = 0; p < 12; p++) {
 		let used = false;
 		for (let t = 0; t < beats; t++) {
-			used = used || (pattern[p][t] !== undefined);
+			used = used || (pattern[current_page][p][t] !== undefined);
 		}
 		chord.contains.push(used);
 		if (used) chord.count++;
@@ -508,37 +513,52 @@ function describe_pitch_quality(chord,p) {
 
 function rhythm_over(e) {
 	let c = e.target;
+	let page = parseInt(c.dataset.page);
 	let p = parseInt(c.dataset.p);
 	let t = parseInt(c.dataset.t);
-	let chord = describe_chord_quality();
-	let quality = describe_pitch_quality(chord,p);
-	for (let p2 = 0; p2 < 12; p2++) {
-		let text = '';
-		if (p2 === p && quality !== '' && (pattern[p][t] !== undefined || !chord.contains[p])) {
-			text = quality;
-		} else if (p2 === chord.root) {
-			text = 'root';
-		} else if (chord.alt && p2 === chord.candidates[1].root) {
-			text = 'alt';
+	if (page === current_page) {
+		let chord = describe_chord_quality();
+		let quality = describe_pitch_quality(chord,p);
+		for (let p2 = 0; p2 < 12; p2++) {
+			let text = '';
+			if (p2 === p && quality !== '' && (pattern[page][p][t] !== undefined || !chord.contains[p])) {
+				text = quality;
+			} else if (p2 === chord.root) {
+				text = 'root';
+			} else if (chord.alt && p2 === chord.candidates[1].root) {
+				text = 'alt';
+			}
+			cell(p2,2).textContent = text;
 		}
-		cell(p2,2).textContent = text;
 	}
 }
 
 function init() {
 	pattern = [];
-	for (let p = 0; p < 12; p++) {
-		let r = [];
-		for (let t = 0; t < beats; t++) {
-			r.push(undefined);
-			let c = cell(p,3+t);
-			c.dataset.p = p;
-			c.dataset.t = t;
-			c.onclick = rhythm_click;
-			c.onmouseover = rhythm_over;
+	for (let page = 0; page < 3; page++) {
+		let pattern_page = [];
+		for (let p = 0; p < 12; p++) {
+			let r = [];
+			for (let t = 0; t < beats; t++) {
+				r.push(undefined);
+				let c = cell(p,3+beats*page+t);
+				c.dataset.page = page;
+				c.dataset.p = p;
+				c.dataset.t = t;
+				c.onclick = rhythm_click;
+				c.onmouseover = rhythm_over;
+			}
+			pattern_page.push(r);
 		}
-		pattern.push(r);
+		pattern.push(pattern_page);
 	}
+}
+
+function select_page(page) {
+	document.getElementById('pagehead'+current_page).classList.remove('active');
+	current_page = page;
+	document.getElementById('pagehead'+current_page).classList.add('active');
+	update_chord_text();
 }
 
 window.onload = init;
@@ -593,7 +613,9 @@ table {
 				<th>Key</th>
 				<th>Pitch classs</th>
 				<th style="min-width:200">Quality</th>
-				<th colspan="16" class="active">Rhythm</th>
+				<th id="pagehead0" colspan="16" class="active" onclick="select_page(0)">Rhythm</th>
+				<th id="pagehead1" colspan="16" onclick="select_page(1)">Rhythm</th>
+				<th id="pagehead2" colspan="16" onclick="select_page(2)">Rhythm</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -601,6 +623,16 @@ table {
 				<td></td>
 				<td>E♭</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -613,10 +645,30 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>F</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -629,10 +681,30 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>G</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -645,10 +717,30 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>A</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -661,10 +753,30 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>B</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -677,6 +789,16 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>D♭</td>
@@ -685,10 +807,30 @@ table {
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
 			</tr><tr>
 				<td></td>
 				<td>A♭</td>
 				<td class="qual"></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+				<td class="beat"></td><td></td><td></td><td></td>
+
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
 				<td class="beat"></td><td></td><td></td><td></td>
@@ -719,6 +861,9 @@ table {
 			</p>
 			<p>
 			Once you've placed some notes, you'll notice that hovering over squares may suggest a word in the "quality" column. This is a (very vague) description of what it would sound like to add that note (or remove it if it's in parentheses). After you play around with the program for some time you'll get a better idea what these words mean.
+			</p>
+			<p>
+			You are given three pages to work with. Click the corresponding rhythm tab to start playing it. (If you click one of the squares on an inactive page, it won't sound immediately). This allows you to practice chord progressions.
 			</p>
 		</div>
 		<div id="basic-chords" class="hidden">
