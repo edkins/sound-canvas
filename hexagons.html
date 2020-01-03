@@ -1,0 +1,108 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+<script>
+'use strict';
+
+let hexes = undefined;
+const width = 600;
+const height = 600;
+
+const labels = ['E♭','B♭','F','C','G','D','A','E','B','G♭','D♭','A♭'];
+const pattern = [undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined];
+
+const a_hz = 440;
+let ctx = undefined;
+let oscs = undefined;
+let gains = undefined;
+
+function hex_click(e) {
+	init_audio();
+	let pitch = parseInt(e.target.dataset.pitch);
+	if (pattern[pitch] === undefined) {
+		pattern[pitch] = 0;
+		gains[pitch].gain.setTargetAtTime(0.1, ctx.currentTime, 0.3);
+	} else {
+		pattern[pitch] = undefined;
+		gains[pitch].gain.setTargetAtTime(0, ctx.currentTime, 0.2);
+	}
+	for (const hex of hexes) {
+		if (pattern[hex.pitch] === undefined) {
+			hex.polygon.setAttribute('fill', '#fed');
+		} else {
+			hex.polygon.setAttribute('fill', '#f00');
+		}
+	}
+}
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		oscs = [];
+		gains = [];
+		for (let pitch = 0; pitch < 12; pitch++) {
+			let q = (7 * pitch + 6) % 12;  // starts from A
+			let freq = a_hz * Math.pow(2, q / 12);
+			let osc = ctx.createOscillator();
+			let gain = ctx.createGain();
+
+			osc.frequency.setValueAtTime(freq, ctx.currentTime);
+			osc.start();
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			
+			oscs.push(osc);
+			gains.push(gain);
+		}
+	}
+}
+
+function init() {
+	let svg = document.getElementById('svg');
+	let r3 = Math.sqrt(3);
+	let d = 20;
+	hexes = [];
+	for (let i = -20; i < 20; i++) {
+		for (let j = 0; j < 20; j++) {
+			let x = (2 * i + j) * d * r3;
+			let y = j * d * 3;
+			if (x >= -2 * d && x <= width + 2 * d && y >= -d && y <= height + d) {
+				let pitch = (i + 20 + 4 * j) % 12;
+				const polygon = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+				polygon.setAttribute('points', `${x-d*r3},${y-d} ${x},${y-2*d} ${x+d*r3},${y-d} ${x+d*r3},${y+d} ${x},${y+2*d} ${x-d*r3},${y+d}`);
+				polygon.setAttribute('fill', '#fed');
+				polygon.setAttribute('stroke', '#000');
+				polygon.dataset.pitch = pitch;
+				polygon.onclick = hex_click;
+				svg.appendChild(polygon);
+
+				const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+				text.setAttribute('x', x);
+				text.setAttribute('y', y);
+				text.setAttribute('dominant-baseline','central');
+				text.setAttribute('text-anchor','middle');
+				text.setAttribute('pointer-events','none');
+				text.textContent = labels[pitch];
+				svg.appendChild(text);
+
+				hexes.push({
+					x,
+					y,
+					pitch,
+					polygon
+				});
+			}
+		}
+	}
+}
+
+window.onload = init;
+
+</script>
+	</head>
+	<body>
+		<svg id="svg" width="600" height="600"></svg>
+	</body>
+</html>

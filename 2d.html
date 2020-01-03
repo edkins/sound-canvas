@@ -1,0 +1,306 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+const a_hz = 440 / 4;
+const colours = ['#ccc','#afa','#fc0','#88f'];
+const pitch_names = ['A','B♭','B','C','C#','D','Eb','E','F','F#','G','G#'];
+const max_pitch = 50;
+let oscs = undefined;
+let ctx = undefined;
+let gains = undefined;
+let circles = undefined;
+let current_chord = undefined;
+
+function init() {
+	init_svg();
+	init_audio();
+}
+
+function init_audio() {
+	ctx = new AudioContext();
+
+	oscs = [];
+	gains = [];
+	for (let p = 0; p < max_pitch; p++) {
+		const freq = a_hz * Math.pow(2, p / 12);
+
+		const osc = ctx.createOscillator();
+		osc.frequency.setValueAtTime(freq, ctx.currentTime);
+		osc.start();
+
+		const gain = ctx.createGain();
+		gain.gain.setValueAtTime(0, ctx.currentTime);
+
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+
+		oscs.push(osc);
+		gains.push(gain);
+	}
+}
+
+function click_silence() {
+	hide_red();
+	hide_chord();
+	silence();
+	current_chord = undefined;
+}
+
+function silence() {
+	for (let p = 0; p < max_pitch; p++) {
+		gains[p].gain.setValueAtTime(0, ctx.currentTime);
+	}
+}
+
+function hide_chord() {
+	for (let p = 0; p < max_pitch; p++) {
+		circles[p].setAttribute('stroke-width', 3);
+	}
+}
+
+
+function hide_red() {
+	for (let p = 0; p < max_pitch; p++) {
+		circles[p].setAttribute('stroke', '#000');
+	}
+}
+
+function click_circle(e) {
+	const p = parseInt(e.target.dataset.pitch);
+
+	if (e.ctrlKey) {
+		alt(e);
+	}
+
+	/*if (e.altKey) {
+		silence();
+		hide_chord();
+	}*/
+	hide_red();
+
+	gains[p].gain.setValueAtTime(0.5, ctx.currentTime);
+	if (current_chord !== undefined && current_chord.indexOf(p) !== -1) {
+		gains[p].gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.5);
+	} else {
+		gains[p].gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.5);
+	}
+
+	e.target.setAttribute('stroke', '#f00');
+	show_chord(current_chord);
+}
+
+function move_circle(e) {
+	if (e.ctrlKey) {
+		alt(e);
+	}
+}
+
+function alt(e) {
+	const dim = document.getElementById('svg').getBoundingClientRect();
+	const x = Math.round((e.clientX - dim.x - parseInt(e.target.getAttribute('cx'))) / 27);
+	const y = Math.round((e.clientY - dim.y - parseInt(e.target.getAttribute('cy'))) / 27);
+	const ypos = ((e.clientY - dim.y - parseInt(e.target.getAttribute('cy'))) / 27) > 0;
+	const p = parseInt(e.target.dataset.pitch);
+	let chord = [];
+	
+/*
+Key of D major:
+
+G  D  A  E  B  F# C#
+x  <        <          G major
+   x  <        <       D major
+      x  >        <    A major
+>        <  x          E minor
+   >        >  x       B minor
+      >        >  x    F# minor
+      
+*/
+
+	let pc = p % 12;
+	if (y === -1 && (pc === 5 || pc === 0) || !ypos && pc === 10) {
+		// G -> E minor. D -> B# minor. A -> F# minor
+		if (x === -1) chord = [p-8, p-3, p];
+		else if (x === 0) chord = [p-3, p, p+4];
+		else if (x === 1) chord = [p, p+4, p+9];
+	} else if (y === 0 && (pc === 5 || pc === 0) || ypos && pc === 10) {
+		// G -> G major. D -> D major. A -> A major
+		if (x === -1) chord = [p-8, p-5, p];
+		else if (x === 0) chord = [p-5, p, p+4];
+		else if (x === 1) chord = [p, p+4, p+7];
+	} else if (y === 1 && (pc === 5 || pc === 0) || !ypos && pc === 7) {
+		// D -> G major. A -> D major. E -> A major
+		if (x === -1) chord = [p-7, p-3, p];
+		else if (x === 0) chord = [p-3, p, p+5];
+		else if (x === 1) chord = [p, p+5, p+9];
+	} else if (y === -1 && (pc === 2 || pc === 9) || ypos && pc === 7) {
+		// E -> E minor. B -> B minor. F# -> F# minor
+		if (x === -1) chord = [p-9, p-5, p];
+		else if (x === 0) chord = [p-5, p, p+3];
+		else if (x === 1) chord = [p, p+3, p+7];
+	} else if (y === 0 && (pc === 2 || pc === 9) || !ypos && pc === 4) {
+		// B -> E minor. F# -> B minor. C# -> F# minor
+		if (x === -1) chord = [p-7, p-4, p];
+		else if (x === 0) chord = [p-4, p, p+5];
+		else if (x === 1) chord = [p, p+5, p+8];
+	} else if (y === 1 && (pc === 2 || pc === 9) || ypos && pc === 4) {
+		// B -> G major. F# -> D major. C# -> A major
+		if (x === -1) chord = [p-9, p-4, p];
+		else if (x === 0) chord = [p-4, p, p+3];
+		else if (x === 1) chord = [p, p+3, p+8];
+	}
+
+	if (e.buttons) {
+		current_chord = chord;
+		silence();
+		for (let pitch = 0; pitch < max_pitch; pitch++) {
+			if (chord.indexOf(pitch) !== -1) {
+				gains[pitch].gain.setValueAtTime(0.1, ctx.currentTime);
+			}
+		}
+	}
+
+	show_chord(chord);
+}
+
+function show_chord(chord) {
+	hide_chord();
+
+	if (chord !== undefined) {
+		for (let pitch = 0; pitch < max_pitch; pitch++) {
+			if (chord.indexOf(pitch) !== -1) {
+				circles[pitch].setAttribute('stroke-width', 7);
+			}
+		}
+	}
+}
+
+function init_svg() {
+	const svg = document.getElementById('svg');
+	for (let o = -5; o < 10; o++) {
+		const x = o * 30 * 12 + 30;
+		const y = 50 + 5 * 30;
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+
+		line.setAttribute('x1', x - 3000);
+		line.setAttribute('y1', y - 600);
+		line.setAttribute('x2', x + 3000);
+		line.setAttribute('y2', y + 600);
+		line.setAttribute('stroke', '#000');
+
+		svg.appendChild(line);
+	}
+	for (let n = 0; n < 15; n++) {
+		const x = n * 4 * 30 + 30;
+		const y = 50 + 5 * 30;
+		const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+
+		line.setAttribute('x1', x - 1000);
+		line.setAttribute('y1', y - 1000);
+		line.setAttribute('x2', x + 1000);
+		line.setAttribute('y2', y + 1000);
+		line.setAttribute('stroke', '#000');
+
+		svg.appendChild(line);
+	}
+	circles = [];
+	for (let p = 0; p < max_pitch; p++) {
+		const q = (p * 5 + 5) % 12;
+		const x = p * 30 + 30;
+		const y = 50 + q * 30;
+		const col = p % 4;
+		const pitch_class = p % 12;
+
+		const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+
+		circle.setAttribute('cx', x);
+		circle.setAttribute('cy', y);
+		circle.setAttribute('r', 40);
+		circle.setAttribute('fill', colours[col]);
+		circle.setAttribute('stroke', '#000');
+		circle.setAttribute('stroke-width', 3);
+		circle.dataset.pitch = p;
+		circle.onmousedown = click_circle;
+		circle.onmousemove = move_circle;
+
+		svg.appendChild(circle);
+		circles.push(circle);
+
+		if (pitch_class === 10 || pitch_class === 7 || pitch_class === 4) {
+			let line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x - 40);
+			line.setAttribute('y1', y);
+			line.setAttribute('x2', x + 40);
+			line.setAttribute('y2', y);
+			line.setAttribute('stroke','#fff');
+			line.setAttribute('pointer-events', 'none');
+			svg.appendChild(line);
+		}
+		if (pitch_class === 5 || pitch_class === 0 || pitch_class === 2 || pitch_class === 9) {
+			let line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x - 40);
+			line.setAttribute('y1', y - 13);
+			line.setAttribute('x2', x + 40);
+			line.setAttribute('y2', y - 13);
+			line.setAttribute('stroke','#fff');
+			line.setAttribute('pointer-events', 'none');
+			svg.appendChild(line);
+
+			line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x - 40);
+			line.setAttribute('y1', y + 13);
+			line.setAttribute('x2', x + 40);
+			line.setAttribute('y2', y + 13);
+			line.setAttribute('stroke','#fff');
+			line.setAttribute('pointer-events', 'none');
+			svg.appendChild(line);
+		}
+		if (pitch_class === 5 || pitch_class === 0 || pitch_class === 2 || pitch_class === 9 || pitch_class === 10 || pitch_class === 7 || pitch_class === 4) {
+			let line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x - 13);
+			line.setAttribute('y1', y - 40);
+			line.setAttribute('x2', x - 13);
+			line.setAttribute('y2', y + 40);
+			line.setAttribute('stroke','#fff');
+			line.setAttribute('pointer-events', 'none');
+			svg.appendChild(line);
+
+			line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x + 13);
+			line.setAttribute('y1', y - 40);
+			line.setAttribute('x2', x + 13);
+			line.setAttribute('y2', y + 40);
+			line.setAttribute('stroke','#fff');
+			line.setAttribute('pointer-events', 'none');
+			svg.appendChild(line);
+		}
+
+
+		const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+
+		text.setAttribute('x', x);
+		text.setAttribute('y', y);
+		text.setAttribute('dominant-baseline', 'central');
+		text.setAttribute('text-anchor', 'middle');
+		text.setAttribute('pointer-events', 'none');
+		text.textContent = pitch_names[pitch_class];
+
+		svg.appendChild(text);
+	}
+}
+
+window.onload = init;
+	</script>
+	<body>
+		<svg width="1600" height="420" id="svg">
+			<rect x="0" y="0" width="1600" height="420" fill="#fff"/>
+			<line x1="0" y1="280" x2="1600" y2="280" stroke="#fcc"/>
+			<line x1="0" y1="60" x2="1600" y2="60" stroke="#fcc"/>
+		</svg>
+		<br>
+		<input type="button" onclick="click_silence()" value="Silence">
+	</body>
+</html>
