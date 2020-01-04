@@ -6,14 +6,16 @@
 'use strict';
 
 const a_hz = 440 / 4;
-const colours = ['#ccc','#afa','#fc0','#88f'];
+const colours = ['#ccc','#afa','#fc0','#aaf'];
 const pitch_names = ['A','B♭','B','C','C#','D','Eb','E','F','F#','G','G#'];
 const max_pitch = 50;
 let oscs = undefined;
 let ctx = undefined;
 let gains = undefined;
 let circles = undefined;
-let current_chord = undefined;
+let current_chord = [];
+let current_mode = 'grid';
+let pitch_class_rects = undefined;
 
 function init() {
 	init_svg();
@@ -47,7 +49,7 @@ function click_silence() {
 	hide_red();
 	hide_chord();
 	silence();
-	current_chord = undefined;
+	current_chord = [];
 }
 
 function silence() {
@@ -59,6 +61,7 @@ function silence() {
 function hide_chord() {
 	for (let p = 0; p < max_pitch; p++) {
 		circles[p].setAttribute('stroke-width', 3);
+		pitch_class_rects[p % 12].setAttribute('opacity',0);
 	}
 }
 
@@ -72,21 +75,29 @@ function hide_red() {
 function click_circle(e) {
 	const p = parseInt(e.target.dataset.pitch);
 
-	if (e.ctrlKey) {
+	if (current_mode === 'grid' && e.ctrlKey) {
 		alt(e);
 	}
 
-	/*if (e.altKey) {
+	if (current_mode === 'sustain' && !e.ctrlKey) {
 		silence();
 		hide_chord();
-	}*/
+		current_chord = [];
+	}
 	hide_red();
 
 	gains[p].gain.setValueAtTime(0.5, ctx.currentTime);
-	if (current_chord !== undefined && current_chord.indexOf(p) !== -1) {
+	if (current_mode === 'grid') {
+		if (current_chord !== undefined && current_chord.indexOf(p) !== -1) {
+			gains[p].gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.5);
+		} else {
+			gains[p].gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.5);
+		}
+	} else if (current_mode === 'sustain') {
 		gains[p].gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.5);
-	} else {
-		gains[p].gain.linearRampToValueAtTime(0.0, ctx.currentTime + 0.5);
+		if (current_chord.indexOf('p') === -1) {
+			current_chord.push(p);
+		}
 	}
 
 	e.target.setAttribute('stroke', '#f00');
@@ -94,7 +105,7 @@ function click_circle(e) {
 }
 
 function move_circle(e) {
-	if (e.ctrlKey) {
+	if (current_mode === 'grid' && e.ctrlKey) {
 		alt(e);
 	}
 }
@@ -174,12 +185,20 @@ function show_chord(chord) {
 			if (chord.indexOf(pitch) !== -1) {
 				circles[pitch].setAttribute('stroke-width', 7);
 			}
+			if (current_chord.indexOf(pitch) !== -1) {
+				pitch_class_rects[pitch % 12].setAttribute('opacity', 0.5);
+			}
 		}
 	}
 }
 
 function init_svg() {
 	const svg = document.getElementById('svg');
+	const svg_connect = document.getElementById('connect');
+	const svg_circles = document.getElementById('circles');
+	const svg_gridlines = document.getElementById('gridlines');
+	const svg_labels = document.getElementById('labels');
+	const svg_pitch_classes = document.getElementById('pitch_classes');
 	for (let o = -5; o < 10; o++) {
 		const x = o * 30 * 12 + 30;
 		const y = 50 + 5 * 30;
@@ -191,7 +210,7 @@ function init_svg() {
 		line.setAttribute('y2', y + 600);
 		line.setAttribute('stroke', '#000');
 
-		svg.appendChild(line);
+		svg_connect.appendChild(line);
 	}
 	for (let n = 0; n < 15; n++) {
 		const x = n * 4 * 30 + 30;
@@ -204,7 +223,7 @@ function init_svg() {
 		line.setAttribute('y2', y + 1000);
 		line.setAttribute('stroke', '#000');
 
-		svg.appendChild(line);
+		svg_connect.appendChild(line);
 	}
 	circles = [];
 	for (let p = 0; p < max_pitch; p++) {
@@ -226,7 +245,7 @@ function init_svg() {
 		circle.onmousedown = click_circle;
 		circle.onmousemove = move_circle;
 
-		svg.appendChild(circle);
+		svg_circles.appendChild(circle);
 		circles.push(circle);
 
 		if (pitch_class === 10 || pitch_class === 7 || pitch_class === 4) {
@@ -237,7 +256,7 @@ function init_svg() {
 			line.setAttribute('y2', y);
 			line.setAttribute('stroke','#fff');
 			line.setAttribute('pointer-events', 'none');
-			svg.appendChild(line);
+			svg_gridlines.appendChild(line);
 		}
 		if (pitch_class === 5 || pitch_class === 0 || pitch_class === 2 || pitch_class === 9) {
 			let line = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -247,7 +266,7 @@ function init_svg() {
 			line.setAttribute('y2', y - 13);
 			line.setAttribute('stroke','#fff');
 			line.setAttribute('pointer-events', 'none');
-			svg.appendChild(line);
+			svg_gridlines.appendChild(line);
 
 			line = document.createElementNS('http://www.w3.org/2000/svg','line');
 			line.setAttribute('x1', x - 40);
@@ -256,7 +275,7 @@ function init_svg() {
 			line.setAttribute('y2', y + 13);
 			line.setAttribute('stroke','#fff');
 			line.setAttribute('pointer-events', 'none');
-			svg.appendChild(line);
+			svg_gridlines.appendChild(line);
 		}
 		if (pitch_class === 5 || pitch_class === 0 || pitch_class === 2 || pitch_class === 9 || pitch_class === 10 || pitch_class === 7 || pitch_class === 4) {
 			let line = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -266,7 +285,7 @@ function init_svg() {
 			line.setAttribute('y2', y + 40);
 			line.setAttribute('stroke','#fff');
 			line.setAttribute('pointer-events', 'none');
-			svg.appendChild(line);
+			svg_gridlines.appendChild(line);
 
 			line = document.createElementNS('http://www.w3.org/2000/svg','line');
 			line.setAttribute('x1', x + 13);
@@ -275,7 +294,7 @@ function init_svg() {
 			line.setAttribute('y2', y + 40);
 			line.setAttribute('stroke','#fff');
 			line.setAttribute('pointer-events', 'none');
-			svg.appendChild(line);
+			svg_gridlines.appendChild(line);
 		}
 
 
@@ -288,19 +307,66 @@ function init_svg() {
 		text.setAttribute('pointer-events', 'none');
 		text.textContent = pitch_names[pitch_class];
 
-		svg.appendChild(text);
+		svg_labels.appendChild(text);
+	}
+
+	pitch_class_rects = [];
+	for (let pc = 0; pc < 12; pc++) {
+		const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+		const q = (pc * 5 + 5) % 12;
+		const y = 50 + q * 30;
+		rect.setAttribute('x', 0);
+		rect.setAttribute('y', y - 15);
+		rect.setAttribute('width', 1600);
+		rect.setAttribute('height', 30);
+		rect.setAttribute('fill', '#ddd');
+		rect.setAttribute('opacity', 0);
+
+		svg_pitch_classes.appendChild(rect);
+		pitch_class_rects.push(rect);
+	}
+}
+
+function set_mode(mode) {
+	current_mode = mode;
+	current_chord = [];
+	hide_chord();
+	hide_red();
+
+	if (mode === 'grid') {
+		document.getElementById('gridlines').setAttribute('opacity', 1);
+	} else {
+		document.getElementById('gridlines').setAttribute('opacity', 0);
+	}
+}
+
+function keypress(e) {
+	if (e.key === 'q') {
+		click_silence();
+	} else if (e.key === 'g') {
+		set_mode('grid');
+	} else if (e.key === 's') {
+		set_mode('sustain');
 	}
 }
 
 window.onload = init;
 	</script>
-	<body>
+	<body onkeypress="keypress(event)">
 		<svg width="1600" height="420" id="svg">
 			<rect x="0" y="0" width="1600" height="420" fill="#fff"/>
 			<line x1="0" y1="280" x2="1600" y2="280" stroke="#fcc"/>
 			<line x1="0" y1="60" x2="1600" y2="60" stroke="#fcc"/>
+			<g id="connect"/>
+			<g id="pitch_classes"/>
+			<g id="circles"/>
+			<g id="gridlines"/>
+			<g id="labels"/>
 		</svg>
 		<br>
-		<input type="button" onclick="click_silence()" value="Silence">
+		<input type="button" onclick="click_silence()" value="Quiet (q)">
+		|
+		<input type="button" onclick="set_mode('grid')" value="Grid (g)">
+		<input type="button" onclick="set_mode('sustain')" value="Sustain (s)">
 	</body>
 </html>
