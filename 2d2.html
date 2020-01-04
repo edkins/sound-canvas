@@ -1,0 +1,250 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+const a_hz = 440 / 4;
+const pitch_names = ['A','B♭','B','C','C#','D','Eb','E','F','F#','G','G#'];
+const max_pitch = 50;
+let oscs = undefined;
+let ctx = undefined;
+let gains = undefined;
+let circles = undefined;
+let current_chord = [];
+let suggested_chord = undefined;
+
+function init() {
+	init_svg();
+	init_audio();
+}
+
+function init_audio() {
+	ctx = new AudioContext();
+
+	oscs = [];
+	gains = [];
+	for (let p = 0; p < max_pitch; p++) {
+		const freq = a_hz * Math.pow(2, p / 12);
+
+		const osc = ctx.createOscillator();
+		osc.frequency.setValueAtTime(freq, ctx.currentTime);
+		osc.start();
+
+		const gain = ctx.createGain();
+		gain.gain.setValueAtTime(0, ctx.currentTime);
+
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+
+		oscs.push(osc);
+		gains.push(gain);
+	}
+}
+
+function click_silence() {
+	current_chord = [];
+	hide_red();
+	show_chord();
+	silence();
+}
+
+function silence() {
+	for (let p = 0; p < max_pitch; p++) {
+		gains[p].gain.setValueAtTime(0, ctx.currentTime);
+	}
+}
+
+function hide_red() {
+	for (let p = 0; p < max_pitch; p++) {
+		circles[p].setAttribute('stroke', '#000');
+	}
+}
+
+function click_circle(e) {
+	const p = parseInt(e.target.dataset.pitch);
+
+	hide_red();
+
+	for (let pitch = 0; pitch < max_pitch; pitch++) {
+		if (pitch === p) {
+			gains[pitch].gain.setValueAtTime(0.5, ctx.currentTime);
+			gains[pitch].gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.5);
+		} else if (suggested_chord !== undefined && suggested_chord.notes.indexOf(pitch) !== -1) {
+			gains[pitch].gain.setValueAtTime(0.1, ctx.currentTime);
+		} else if (suggested_chord !== undefined) {
+			gains[pitch].gain.setValueAtTime(0, ctx.currentTime);
+		}
+	}
+	if (suggested_chord !== undefined) {
+		current_chord = suggested_chord;
+		suggested_chord = undefined;
+	}
+
+	e.target.setAttribute('stroke', '#f00');
+	show_chord(current_chord);
+}
+	
+/*
+Key of D major:
+
+10 5  0  7  2  9  4
+G  D  A  E  B  F# C#
+x        x  x          E minor
+x  x        x          G major
+   x        x  x       B minor
+   x  x        x       D major
+      x        x  x    F# minor
+      x  x        x    A major
+*/
+
+function move_circle(e) {
+	if (e.ctrlKey) {
+		let chords = [
+			[10,7, 2],
+			[10,5, 2],
+			[5, 2, 9],
+			[5, 0, 9],
+			[0, 9, 4],
+			[0, 7, 4],
+			[3, 7, 10],  // C major
+			[2, 6, 9],   // B major
+		];
+		let betweens = [
+			[5,0],
+			[0,7],
+			[0,7],
+			[7,2],
+			[7,2],
+			[2,9],
+			[],
+			[]
+		];
+		const dim = document.getElementById('svg').getBoundingClientRect();
+		const y = e.clientY - dim.y;
+		let pitch = parseInt(e.target.dataset.pitch);
+		let chnum = -1;
+		switch (pitch % 12) {
+			case 0: chnum = 5; break; // A
+			case 2: chnum = 2; break; // B
+		        case 3: chnum = 6; break; // C -> C major
+			case 5: chnum = 3; break; // D
+		        case 6: chnum = 7; break; // Eb -> B major
+			case 7: chnum = 0; break; // E
+			case 9: chnum = 4; break; // F#
+			case 10:chnum = 1; break; // G
+		}
+
+		/*const chnum = Math.floor(10 - y / 20);*/
+		if (chnum >= 0 && chnum < chords.length) {
+			suggested_chord = {
+				notes: chords[chnum].map(x => x + 24),
+				betweens: betweens[chnum].map(x => x + 24)
+			};
+		} else {
+			suggested_chord = {
+				notes: [],
+				betweens: []
+			};
+		}
+		show_chord(suggested_chord);
+	}
+}
+
+function interval_class(a,b) {
+	let result = ((a - b) % 12 + 12) % 12;
+	return result;
+}
+
+function show_chord(chord) {
+	if (chord !== undefined) {
+		for (let p = 0; p < max_pitch; p++) {
+			let is_chord = false;
+			let is_adj = false;
+			let is_between = false;
+			for (let c of chord.notes) {
+				let interval = interval_class(p, c);
+				if (interval === 0) {
+					is_chord = true;
+				} else if (interval === 5 || interval === 7) {
+					is_adj = true;
+		      		}
+			}
+			for (let c of chord.betweens) {
+				if (interval_class(p, c) === 0) {
+					is_between = true;
+				}
+			}
+			if (is_chord) {
+				circles[p].setAttribute('fill','#f88');
+			} else if (is_between) {
+				circles[p].setAttribute('fill','#ccf');
+		        } else if (is_adj) {
+				circles[p].setAttribute('fill','#fff');
+			} else {
+				circles[p].setAttribute('fill','#888');
+			}
+		}
+	}
+}
+
+function init_svg() {
+	const svg = document.getElementById('svg');
+	const svg_circles = document.getElementById('circles');
+	const svg_labels = document.getElementById('labels');
+	circles = [];
+	for (let p = 0; p < max_pitch; p++) {
+		const q = (p * 5 + 5) % 12;
+		const x = p * 30 + 30;
+		const y = 50 + q * 15;
+		const col = p % 4;
+		const pitch_class = p % 12;
+
+		const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+
+		circle.setAttribute('cx', x);
+		circle.setAttribute('cy', y);
+		circle.setAttribute('r', 40);
+		circle.setAttribute('fill', '#888');
+		circle.setAttribute('stroke', '#000');
+		circle.setAttribute('stroke-width', 3);
+		circle.dataset.pitch = p;
+		circle.onmousedown = click_circle;
+		circle.onmousemove = move_circle;
+
+		svg_circles.appendChild(circle);
+		circles.push(circle);
+
+		const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+
+		text.setAttribute('x', x);
+		text.setAttribute('y', y);
+		text.setAttribute('dominant-baseline', 'central');
+		text.setAttribute('text-anchor', 'middle');
+		text.setAttribute('pointer-events', 'none');
+		text.textContent = pitch_names[pitch_class];
+
+		svg_labels.appendChild(text);
+	}
+}
+
+function keypress(e) {
+	if (e.key === 'q') {
+		click_silence();
+	}
+}
+
+window.onload = init;
+	</script>
+	<body onkeypress="keypress(event)">
+		<svg width="1600" height="420" id="svg">
+			<rect x="0" y="0" width="1600" height="420" fill="#fff"/>
+			<g id="circles"/>
+			<g id="labels"/>
+		</svg>
+		<br>
+		<input type="button" onclick="click_silence()" value="Quiet (q)">
+		|
+	</body>
+</html>

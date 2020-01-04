@@ -86,6 +86,7 @@ function click_circle(e) {
 	}
 	hide_red();
 
+	gains[p].gain.cancelScheduledValues(ctx.currentTime);
 	gains[p].gain.setValueAtTime(0.5, ctx.currentTime);
 	if (current_mode === 'grid') {
 		if (current_chord !== undefined && current_chord.indexOf(p) !== -1) {
