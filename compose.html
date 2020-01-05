@@ -11,6 +11,7 @@ const lyd_scale_fifths = [0, 2, 4, 6, 1, 3, 5];
 let key_sig = undefined;
 let key_mode = undefined;
 const max_pitch = 48;
+let current_chord = undefined;
 
 let key_pat = 8;
 const scale_defs = [
@@ -277,6 +278,16 @@ function scale_note_name(pat, sig, mode, n) {
 	return {name, accidental};
 }
 
+function scale_pitch_class_inverse(pat, sig, mode, pitch_class) {
+	let scale_len = scale_defs[pat].pitches.length;
+	for (let n = 0; n < scale_len; n++) {
+		if (mod(scale_note_pitch(pat,sig,mode,n) - pitch_class, 12) === 0) {
+			return n;
+		}
+	}
+	return undefined;
+}
+
 function click_pattern(e) {
 	key_pat = parseInt(e.target.dataset.pat);
 	init_key_menu();
@@ -387,51 +398,131 @@ function init_main() {
 	}
 }
 
+function update_chord_menu() {
+	const svg = document.getElementById('chord-menu');
+	while (svg.lastChild) {
+		svg.removeChild(svg.lastChild);
+	}
+
+	if (key_pat === undefined || key_sig === undefined || key_mode === undefined || current_chord !== undefined) {
+		return;
+	}
+
+	const h = 45;
+	const tonic_pitch_class = scale_note_pitch(key_pat, key_sig, key_mode, 0);
+	for (let i = 0; i < 12; i++) {
+		const pitch_class = mod(tonic_pitch_class + i, 12);
+		const y = (12 - i) * h;
+		let n = scale_pitch_class_inverse(key_pat, key_sig, key_mode, pitch_class);
+		if (n === undefined) {
+			box(svg, 30, y, 45, h, '#888', '');
+		} else {
+			let name = scale_note_name(key_pat, key_sig, key_mode, n).name;
+			let quality = scale_chord_quality(key_pat, key_mode, n);
+			box(svg, 30, y, 45, h, '#fff', name);
+			if (quality === 'both') {
+				let rect = box(svg, 75, y, 60, h, '#fff', 'major');
+				rect.dataset.root = pitch_class;
+				rect.dataset.quality = 'major';
+				rect.onclick = click_chord;
+				rect = box(svg, 135, y, 60, h, '#fff', 'minor');
+				rect.dataset.root = pitch_class;
+				rect.dataset.quality = 'minor';
+				rect.onclick = click_chord;
+			} else if (quality !== undefined) {
+				let rect = box(svg, 75, y, 120, h, '#fff', quality);
+				rect.dataset.root = pitch_class;
+				rect.dataset.quality = quality;
+				rect.onclick = click_chord;
+			}
+		}
+	}
+}
+
+function click_chord(e) {
+	const root = parseInt(e.target.dataset.root);
+	const quality = e.target.dataset.quality;
+	if (quality === 'major') {
+		current_chord = [root, mod(root + 4,12), mod(root + 7,12)];
+	} else if (quality == 'minor') {
+		current_chord = [root, mod(root + 3,12), mod(root + 7,12)];
+	} else {
+		current_chord = undefined;
+	}
+	update_display();
+}
+
 function init() {
 	init_key_menu();
 	init_main();
 	update_display();
 }
 
+function update_staff() {
+	const scale = document.getElementById('scale');
+	let text_index = 0;
+	let texts = scale.getElementsByTagName('text');
+	let n = -12;
+	const tonic_pitch_class = mod(scale_note_pitch(key_pat, key_sig, key_mode, 0), 12);
+	while (true) {
+		const pitch = scale_note_pitch(key_pat, key_sig, key_mode, n);
+		if (pitch >= max_pitch) {
+			break;
+		}
+		if (pitch >= 0) {
+			const text = texts[text_index];
+			if (text === undefined) {
+				break;
+			}
+			text_index++;
+			const y = 740 - 13 * pitch;
+			const label = scale_note_name(key_pat, key_sig, key_mode, n).name;
+			const pitch_class = pitch % 12;
+			const is_tonic = pitch_class === tonic_pitch_class;
+			text.setAttribute('y', y);
+			text.setAttribute('dominant-baseline', 'central');
+			text.setAttribute('fill', is_tonic ? '#f00' : '#000');
+			text.textContent = label;
+			text.classList.remove('hidden');
+
+			if (current_chord !== undefined && current_chord.indexOf(pitch_class) !== -1) {
+				const is_root = current_chord[0] === pitch_class;
+				const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+				line.setAttribute('x1', 40);
+				line.setAttribute('y1', y);
+				line.setAttribute('x2', 1000);
+				line.setAttribute('y2', y);
+				line.setAttribute('stroke',is_root ? '#f00' : '#000');
+				scale.appendChild(line);
+			}
+		}
+		n++;
+	}
+	while (text_index < texts.length) {
+		const text = texts[text_index];
+		text.classList.add('hidden');
+		text_index++;
+	}
+}
+
 function update_display() {
 	const key_menu = document.getElementById('key-menu');
 	const main = document.getElementById('main');
 	const scale = document.getElementById('scale');
+	const chord_menu = document.getElementById('chord-menu');
 
 	if (key_sig === undefined || key_mode === undefined) {
 		key_menu.classList.remove('hidden');
 		main.classList.add('hidden');
+		chord_menu.classList.add('hidden');
 	} else {
 		key_menu.classList.add('hidden');
 		main.classList.remove('hidden');
 		document.getElementById('key-name').textContent = 'Key: ' + full_key_name(key_pat, key_sig, key_mode);
-		let text_index = 0;
-		let texts = scale.getElementsByTagName('text');
-		let n = -12;
-		while (true) {
-			const pitch = scale_note_pitch(key_pat, key_sig, key_mode, n);
-			if (pitch >= max_pitch) {
-				break;
-			}
-			if (pitch >= 0) {
-				const text = texts[text_index];
-				if (text === undefined) {
-					break;
-				}
-				text_index++;
-				const y = 750 - 13 * pitch;
-				const label = scale_note_name(key_pat, key_sig, key_mode, n).name;
-				text.setAttribute('y', y);
-				text.textContent = label;
-				text.classList.remove('hidden');
-			}
-			n++;
-		}
-		while (text_index < texts.length) {
-			const text = texts[text_index];
-			text.classList.add('hidden');
-			text_index++;
-		}
+
+		update_staff();
+		update_chord_menu();
+		chord_menu.classList.remove('hidden');
 	}
 }
 
@@ -456,6 +547,7 @@ window.onload = init;
 				<text id="key-name" x="0" y="20"></text>
 				<g id="scale"/>
 			</g>
+			<g id="chord-menu"/>
 		</svg>
 	</body>
 </html>
