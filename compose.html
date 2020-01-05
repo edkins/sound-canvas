@@ -1,0 +1,134 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+const c_hz = 440 * Math.pow(2, 3/12) / 2;
+const mode_names = ['Lyd.','Major','Mix.','Dor.','Minor','Phr.'];
+const note_names = ['C♭','G♭','D♭','A♭','E♭','B♭','F','C','G','D','A','E','B','F♯','C♯','D♯','A♯','E♯'];
+let key_sig = undefined;
+let key_mode = undefined;
+
+function box(svg, x, y, w, h, fill, label) {
+	return multibox(svg, x, y, w, h, fill, [{label,x:0,y:0}]);
+}
+
+function multibox(svg, x, y, w, h, fill, labels) {
+	const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+	rect.setAttribute('x', x);
+	rect.setAttribute('y', y);
+	rect.setAttribute('width', w);
+	rect.setAttribute('height', h);
+	rect.setAttribute('fill', fill);
+	rect.setAttribute('stroke', '#000');
+	svg.appendChild(rect);
+
+	for (const label of labels) {
+		const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', x + w / 2 + label.x);
+		text.setAttribute('y', y + h / 2 + label.y);
+		text.setAttribute('dominant-baseline', 'central');
+		text.setAttribute('text-anchor', 'middle');
+		text.setAttribute('fill', '#000');
+		text.setAttribute('pointer-events', 'none');
+		text.textContent = label.label;
+		svg.appendChild(text);
+	}
+
+	return rect;
+}
+
+function key_note_name(sig, mode) {
+	return note_names[6 + sig + mode];
+}
+
+function init_key_menu() {
+	const svg = document.getElementById('key-menu');
+	const w = 60;
+	const h = 45;
+	box(svg, 0, 0, w, h, '#fff', 'Key sig');
+	for (let mode = 0; mode <= 5; mode++) {
+		let fill = '#fff';
+		if (mode === 1) {
+			fill = '#fdd';
+		} else if (mode === 4) {
+			fill = '#cdf';
+		}
+		box(svg, (mode + 1) * w, 0, w, h, fill, mode_names[mode]);
+	}
+	for (let sig = -6; sig <= 6; sig++) {
+		let labels = [];
+		const sharp_ys = [3, 0, 4, 1, -2, 2, -1];
+		const flat_ys = [0, 3, -1, 2, -2, 1];
+		for (let i = 0; i < Math.abs(sig); i++) {
+			if (sig < 0) {
+				labels.push({
+					label: '♭',
+					x: i * 8 - 20,
+					y: -flat_ys[i] * 4
+				});
+			} else {
+				labels.push({
+					label: '♯',
+					x: i * 8 - 20,
+					y: -sharp_ys[i] * 4
+				});
+			}
+			
+		}
+		multibox(svg, 0, (7 - sig) * h, w, h, '#fff', labels);
+
+		for (let mode = 0; mode <= 5; mode++) {
+			let fill = '#fff';
+			if (mode === 1) {
+				fill = '#fff4f4';
+			} else if (mode === 4) {
+				fill = '#f4f8ff';
+			}
+			let rect = box(svg, (mode + 1) * w, (7 - sig) * h, w, h, fill, key_note_name(sig, mode));
+			rect.dataset.mode = mode;
+			rect.dataset.sig = sig;
+			rect.onclick = click_key;
+		}
+	}
+}
+
+function init() {
+	init_key_menu();
+	update_display();
+}
+
+function update_display() {
+	let key_menu = document.getElementById('key-menu');
+	let main = document.getElementById('main');
+
+	if (key_sig === undefined || key_mode === undefined) {
+		key_menu.setAttribute('opacity',1);
+		main.setAttribute('opacity',0);
+	} else {
+		key_menu.setAttribute('opacity',0);
+		main.setAttribute('opacity',1);
+		document.getElementById('key-name').textContent = 'Key: ' + key_note_name(key_sig, key_mode) + ' ' + mode_names[key_mode];
+	}
+}
+
+function click_key(e) {
+	key_mode = parseInt(e.target.dataset.mode);
+	key_sig = parseInt(e.target.dataset.sig);
+	update_display();
+}
+
+window.onload = init;
+
+	</script>
+	<body>
+		<svg width="1000" height="750" style="background:#eee" id="svg">
+			<g id="key-menu">
+			</g>
+			<g id="main">
+				<text id="key-name" x="0" y="20"></text>
+			</g>
+		</svg>
+	</body>
+</html>
