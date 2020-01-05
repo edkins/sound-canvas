@@ -1,0 +1,203 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	<script>
+'use strict';
+
+let ctx = undefined;
+let osc = undefined;
+let gain = undefined;
+let d_hz = 440 * Math.pow(2, 5/12);
+const pitch_names = ['D','Eb','E','F','F#','G','G#','A','Bb','B','C','C#'];
+const in_scale = [true,false,true,false,true,true,false,true,false,true,true,false];
+
+let scale_next = [2, undefined, 2, undefined, 1, 2, undefined, 2, undefined, 2, undefined, 1];
+let scale_prev = [-1, undefined, -2, undefined, -2, -1, undefined, -2, undefined, -2, undefined, -2];
+let last_pitch = 0;
+
+let chord_pos = 0;
+let chord_progression = [
+	[0,4,7],  // D major    D F# A
+	[-1,2,7], // A major    C# E A
+	[0,4,9],  // B minor    D F# B
+	[-1,4,7], // F# minor   C# F# A
+	[0,5,9],  // G major    D G B
+	[0,4,7],  // D major    D F# A
+	[0,5,9],  // G major    D G B
+	[-1,2,7], // A major    C# E A
+];
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		osc = ctx.createOscillator();
+		gain = ctx.createGain();
+
+		osc.frequency.setValueAtTime(d_hz, ctx.currentTime);
+		osc.start();
+
+		gain.gain.setValueAtTime(0, ctx.currentTime);
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+	}
+}
+
+function cell(row,col) {
+	return document.getElementById('table')
+		.getElementsByTagName('tbody')[0]
+		.getElementsByTagName('tr')[row]
+		.getElementsByTagName('td')[col];
+}
+
+function progress() {
+	chord_pos = (chord_pos + 1) % chord_progression.length;
+	update_table();
+}
+
+function update_table() {
+	for (let row = 0; row < 8; row++) {
+		let c0 = cell(row,0);
+		let c1 = cell(row,1);
+		let c2 = cell(row,2);
+		let cnext = cell(row,3);
+		let blah = (9 - row) % 3;
+		let octave = (9 - row - blah) / 3 - 1;
+		let pitch = chord_progression[chord_pos][blah];
+		pitch += 12 * octave;
+		if (pitch < last_pitch) {
+			let x = c1;
+			c1 = c0;
+			c0 = x;
+		}
+		let pitch_class = ((pitch % 12) + 12) % 12;
+		c2.textContent = pitch_names[pitch_class];
+		c2.dataset.pitch = pitch;
+		c1.dataset.pitch = pitch;
+		c0.dataset.pitch = pitch;
+		let next_pitch_class = (pitch_class + 12 + scale_next[pitch_class]) % 12;
+		let prev_pitch_class = (pitch_class + 12 + scale_prev[pitch_class]) % 12;
+		c0.dataset.adj = scale_next[pitch_class];
+		c0.textContent = '<';
+		c1.dataset.adj = scale_prev[pitch_class];
+		c1.textContent = '>';
+
+		let next_chord_pos = (chord_pos + 1) % chord_progression.length;
+		pitch = chord_progression[next_chord_pos][blah];
+		pitch += 12 * octave;
+		pitch_class = ((pitch % 12) + 12) % 12;
+		cnext.textContent = pitch_names[pitch_class];
+	}
+}
+
+function play_note(pitch) {
+	let freq = d_hz * Math.pow(2, pitch / 12);
+	init_audio();
+	osc.frequency.setValueAtTime(freq, ctx.currentTime);
+	gain.gain.cancelScheduledValues(ctx.currentTime);
+	gain.gain.setValueAtTime(0.3, ctx.currentTime);
+	gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+}
+
+function mousedown(e) {
+	if (e.ctrlKey) progress();  // needs to be called first because it may update dataset.pitch
+	let pitch = parseInt(e.target.dataset.pitch);
+	last_pitch = pitch;
+	play_note(pitch);
+	update_table();
+}
+
+function nmousedown(e) {
+	if (e.ctrlKey) progress();  // needs to be called first because it may update dataset.pitch
+	let pitch = parseInt(e.target.dataset.pitch);
+	let adj = parseInt(e.target.dataset.adj);
+	last_pitch = pitch;
+	play_note(pitch + adj);
+	update_table();
+}
+
+function nmouseup(e) {
+	let pitch = parseInt(e.target.dataset.pitch);
+	play_note(pitch);
+}
+
+window.onload = update_table;
+
+	</script>
+<style>
+table {
+	border-spacing: 0;
+}
+th {
+	border: solid black 1px;
+}
+td {
+	border: solid black 1px;
+	height: 50px;
+	text-align: center;
+}
+td.next {
+	color: #ccc;
+}
+</style>
+	</head>
+	<body>
+		<table id="table">
+			<thead>
+				<th width="50"></th>
+				<th width="50"></th>
+				<th width="50">Target</th>
+				<th width="50">Next</th>
+			</thead>
+			<tbody>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+				<tr>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="nmousedown(event)" onmouseup="nmouseup(event)"></td>
+					<td onmousedown="mousedown(event)"></td>
+					<td class="next"></td>
+				</tr>
+			</tbody>
+		</table>
+	</body>
+</html>

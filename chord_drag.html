@@ -1,0 +1,221 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+const width = 1000;
+const height = 600;
+const d_hz = 440 * Math.pow(2, 5/12) / 2;
+let ctx = undefined;
+let osc = undefined;
+let gain = undefined;
+const chord_progression = [
+	[0,4,7],  // D major    D F# A
+	[-1,2,7], // A major    C# E A
+	[0,4,9],  // B minor    D F# B
+	[-1,4,7], // F# minor   C# F# A
+	[0,5,9],  // G major    D G B
+	[0,4,7],  // D major    D F# A
+	[0,5,9],  // G major    D G B
+	[-1,2,7], // A major    C# E A
+];
+const scale = [0, 2, 4, 5, 7, 9, 11];
+const tonic = 0;
+let last_pitch = undefined;
+const fudge = 0;
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		osc = ctx.createOscillator();
+		gain = ctx.createGain();
+
+		osc.frequency.setValueAtTime(d_hz, ctx.currentTime);
+		osc.start();
+
+		gain.gain.setValueAtTime(0, ctx.currentTime);
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+	}
+}
+
+function play_note(pitch) {
+	let freq = d_hz * Math.pow(2, pitch / 12);
+	init_audio();
+	osc.frequency.setValueAtTime(freq, ctx.currentTime);
+	gain.gain.cancelScheduledValues(ctx.currentTime);
+	gain.gain.setValueAtTime(0.3, ctx.currentTime);
+	gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+
+	last_pitch = pitch;
+}
+
+function draw_chord_progression() {
+	const svg = document.getElementById('svg');
+
+	for (let n = 0; n < scale.length; n++) {
+		for (let octave = 0; octave < 3; octave++) {
+			let pitch = scale[n] + 12 * octave;
+			const y = height - pitch * 15;
+			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', 0);
+			line.setAttribute('y1', y);
+			line.setAttribute('x2', width);
+			line.setAttribute('y2', y);
+			line.setAttribute('stroke-width', 1);
+			line.setAttribute('stroke', '#aaa');
+			line.setAttribute('pointer-events','none');
+			svg.appendChild(line);
+		}
+	}
+	for (let i = 0; i < chord_progression.length; i++) {
+		const x1 = i * width / chord_progression.length;
+		const x2 = (i + 1) * width / chord_progression.length;
+
+		for (let j = 0; j < 10; j++) {
+			let pitch = chord_progression[i][j % 3];
+			let octave = (j - (j % 3)) / 3;
+			pitch += octave * 12;
+			const pitch_class = pitch % 12;
+			const y = height - pitch * 15;
+			const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+			line.setAttribute('x1', x1);
+			line.setAttribute('y1', y);
+			line.setAttribute('x2', x2);
+			line.setAttribute('y2', y);
+			line.setAttribute('stroke-width', 2);
+
+			if (pitch_class === tonic) {
+				line.setAttribute('stroke', '#f00');
+			} else {
+				line.setAttribute('stroke', '#444');
+			}
+			line.setAttribute('pointer-events','none');
+			svg.appendChild(line);
+		}
+	}
+}
+
+function init() {
+	init_audio();
+	draw_chord_progression();
+}
+
+function mousemove(e) {
+	const svg = document.getElementById('svg');
+	const dim = svg.getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	
+	let pitch = undefined;
+	if (e.buttons) {
+		pitch = closest_scale_pitch(x, y);
+	} else {
+		pitch = closest_scale_pitch(x, y + fudge);
+	}
+
+	let chord_pitch = closest_chord_pitch(x, y);
+	const arrow = document.getElementById('a');
+	if (pitch === undefined || chord_pitch === undefined || pitch === chord_pitch) {
+		arrow.classList.add('hidden');
+	} else {
+		const py = height - pitch * 15;
+		const cy = height - chord_pitch * 15;
+		arrow.classList.remove('hidden');
+		arrow.setAttribute('x1',x);
+		arrow.setAttribute('y1',py);
+		arrow.setAttribute('x2',x);
+		arrow.setAttribute('y2',cy);
+	}
+
+	if (e.buttons) {
+		if (pitch !== undefined && pitch !== last_pitch) {
+			play_note(pitch);
+		}
+	}
+}
+
+function closest_scale_pitch(x,y) {
+	let closest_pitch = undefined;
+	let closest_dist = 1000;
+	for (let octave = 0; octave < 3; octave++) {
+		for (let p of scale) {
+			let pitch = p + 12 * octave;
+			const y2 = height - pitch * 15;
+			if (Math.abs(y2 - y) < closest_dist) {
+				closest_dist = Math.abs(y2 - y);
+				closest_pitch = pitch;
+			}
+		}
+	}
+
+	return closest_pitch;
+}
+
+function mouseup(e) {
+	const svg = document.getElementById('svg');
+	const dim = svg.getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	
+	let pitch = closest_chord_pitch(x, y);
+	if (pitch !== undefined && pitch !== last_pitch) {
+		play_note(pitch);
+	}
+}
+
+function mousedown(e) {
+	const svg = document.getElementById('svg');
+	const dim = svg.getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	
+	let pitch = closest_scale_pitch(x, y + fudge);
+	if (pitch !== undefined) {
+		play_note(pitch);
+	}
+}
+
+function closest_chord_pitch(x,y) {
+	let closest_pitch = undefined;
+	let closest_dist = 1000;
+	const i = Math.floor(x * chord_progression.length / width)
+
+	if (i < 0 || i >= chord_progression.length) {
+		return undefined;
+	}
+
+	for (let j = 0; j < 10; j++) {
+		let pitch = chord_progression[i][j % 3];
+		let octave = (j - (j % 3)) / 3;
+		pitch += octave * 12;
+		const y2 = height - pitch * 15;
+		if (Math.abs(y2 - y) < closest_dist) {
+			closest_dist = Math.abs(y2 - y);
+			closest_pitch = pitch;
+		}
+	}
+
+	return closest_pitch;
+}
+
+window.onload = init;
+
+	</script>
+<style>
+.hidden {
+	display: none;
+}
+</style>
+	<body>
+		<svg width="1000" height="600" style="background:#eee; cursor:crosshair" id="svg" onmousedown="mousedown(event)" onmousemove="mousemove(event)" onmouseup="mouseup(event)">
+			<defs>
+				<marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="10" markerHeight="5" orient="auto-start-reverse">
+					<path d="M 0 0 L 10 5 L 0 10 z" />
+				</marker>
+			</defs>
+			<line x1="50" y1="50" x2="200" y2="50" marker-end="url(#arrow)" stroke="#f00" stroke-width="2" id="a"/>
+		</svg>
+	</body>
+</html>
