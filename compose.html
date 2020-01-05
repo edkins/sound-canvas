@@ -9,7 +9,8 @@ const lyd_scale_fifths = [0, 2, 4, 6, 1, 3, 5];
 let key_sig = undefined;
 let key_mode = undefined;
 const max_pitch = 48;
-let current_chord = undefined;
+let showing_chord_menu = true;
+let section_progressing_from = undefined;
 let ctx = undefined;
 let oscs = undefined;
 let gains = undefined;
@@ -17,12 +18,12 @@ let silence_times = undefined;
 let osc_pitches = undefined;
 let max_osc_count = 0;
 const c_hz = 440 * Math.pow(2, -9/12) / 2;
-let events = [];
 let playing = false;
 let playing_time = 0;
 let timer_handle = undefined;
 const beats_per_chord = 4;
-let current_chord_index = undefined;
+let sections = [];
+let editing_section_index = undefined;
 
 let key_pat = 8;
 const scale_defs = [
@@ -409,13 +410,37 @@ function init_main() {
 	}
 }
 
+function chord_box(svg, x, y, w, h, root, quality, name) {
+	const chord = make_chord(root, quality);
+	let overlap = 0;
+	if (section_progressing_from !== undefined) {
+		for (const pc of sections[section_progressing_from].chord) {
+			if (chord.indexOf(pc) !== -1) {
+				overlap++;
+			}
+		}
+	}
+	let fill = '#fff';
+	if (overlap >= 2) {
+		fill = '#f88';
+	} else if (overlap === 1) {
+		fill = '#8f8';
+	}
+	const rect = box(svg, x, y, w, h, fill, quality);
+	rect.dataset.root = root;
+	rect.dataset.quality = quality;
+	rect.dataset.chord_name = name + ' ' + quality;
+	rect.onclick = click_chord;
+
+}
+
 function update_chord_menu() {
 	const svg = document.getElementById('chord-menu');
 	while (svg.lastChild) {
 		svg.removeChild(svg.lastChild);
 	}
 
-	if (key_pat === undefined || key_sig === undefined || key_mode === undefined || current_chord !== undefined) {
+	if (key_pat === undefined || key_sig === undefined || key_mode === undefined || !showing_chord_menu) {
 		return;
 	}
 
@@ -432,47 +457,43 @@ function update_chord_menu() {
 			let quality = scale_chord_quality(key_pat, key_mode, n);
 			box(svg, 30, y, 45, h, '#fff', name);
 			if (quality === 'both') {
-				let rect = box(svg, 75, y, 60, h, '#fff', 'major');
-				rect.dataset.root = pitch_class;
-				rect.dataset.quality = 'major';
-				rect.onclick = click_chord;
-				rect = box(svg, 135, y, 60, h, '#fff', 'minor');
-				rect.dataset.root = pitch_class;
-				rect.dataset.quality = 'minor';
-				rect.onclick = click_chord;
+				chord_box(svg, 75, y, 60, h, pitch_class, 'major', name);
+				chord_box(svg, 135, y, 60, h, pitch_class, 'minor', name);
 			} else if (quality !== undefined) {
-				let rect = box(svg, 75, y, 120, h, '#fff', quality);
-				rect.dataset.root = pitch_class;
-				rect.dataset.quality = quality;
-				rect.onclick = click_chord;
+				chord_box(svg, 75, y, 120, h, pitch_class, quality, name);
 			}
 		}
+	}
+}
+
+function make_chord(root, quality) {
+	if (quality === 'major') {
+		return [root, mod(root + 4,12), mod(root + 7,12)];
+	} else if (quality == 'minor') {
+		return [root, mod(root + 3,12), mod(root + 7,12)];
+	} else {
+		return undefined;
 	}
 }
 
 function click_chord(e) {
 	const root = parseInt(e.target.dataset.root);
 	const quality = e.target.dataset.quality;
-	if (quality === 'major') {
-		current_chord = [root, mod(root + 4,12), mod(root + 7,12)];
-	} else if (quality == 'minor') {
-		current_chord = [root, mod(root + 3,12), mod(root + 7,12)];
-	} else {
-		current_chord = undefined;
-	}
+	let current_chord = make_chord(root, quality);
 
-	let time = 0;
-	if (events.length > 0) {
-		time = events[events.length-1].time + 1;
-	}
-
+	let chord_name = e.target.dataset.chord_name;
 	if (current_chord !== undefined) {
-		if (current_chord_index !== undefined) {
-			events[current_chord_index].chord_end_time = time;
+		let tonic = scale_note_pitch(key_pat, key_sig, key_mode, 0);
+		let is_tonic = mod(root - tonic, 12) === 0;
+		let section = {chord: current_chord, chord_name, is_tonic, scale:{pat:key_pat, sig:key_sig, mode:key_mode}};
+		if (editing_section_index === undefined) {
+			sections.push(section);
+		} else {
+			sections[editing_section_index] = section;
 		}
-		events.push({time, chord:current_chord});
-		current_chord_index = events.length - 1;
+		editing_section_index = undefined;
 	}
+	showing_chord_menu = false;
 	update_display();
 }
 
@@ -482,89 +503,93 @@ function init() {
 	update_display();
 }
 
-function update_staff() {
-	const scale = document.getElementById('scale');
-	const staff = document.getElementById('staff');
-	while (staff.lastChild) {
-		staff.removeChild(staff.lastChild);
-	}
-	let text_index = 0;
-	let texts = scale.getElementsByTagName('text');
-	let n = -12;
-	const tonic_pitch_class = mod(scale_note_pitch(key_pat, key_sig, key_mode, 0), 12);
-	while (true) {
-		const pitch = scale_note_pitch(key_pat, key_sig, key_mode, n);
-		if (pitch >= max_pitch) {
-			break;
-		}
-		if (pitch >= 0) {
-			const text = texts[text_index];
-			if (text === undefined) {
-				break;
-			}
-			text_index++;
-			const y = 740 - 13 * pitch;
-			const label = scale_note_name(key_pat, key_sig, key_mode, n).name;
-			const pitch_class = pitch % 12;
-			const is_tonic = pitch_class === tonic_pitch_class;
-			text.setAttribute('y', y);
-			text.setAttribute('dominant-baseline', 'central');
-			text.setAttribute('fill', is_tonic ? '#f00' : '#000');
-			text.textContent = label;
-			text.classList.remove('hidden');
-		}
-		n++;
-	}
-	while (text_index < texts.length) {
-		const text = texts[text_index];
-		text.classList.add('hidden');
-		text_index++;
-	}
-}
-
-function update_notes() {
-	const svg = document.getElementById('notes');
+function update_sections() {
+	const svg = document.getElementById('sections');
 	while (svg.lastChild) {
 		svg.removeChild(svg.lastChild);
 	}
-	for (const e of events) {
-		const x = 40 + e.time * 10;
-		if (e.pitch !== undefined) {
-			const y = 740 - 13 * e.pitch;
-			const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-			circle.setAttribute('cx', x);
-			circle.setAttribute('cy', y);
-			circle.setAttribute('r', 5);
-			circle.setAttribute('fill', '#f00');
-			svg.appendChild(circle);
-		}
-		if (e.chord !== undefined) {
-			let n = -12;
-			while (true) {
-				const pitch = scale_note_pitch(key_pat, key_sig, key_mode, n);
-				const y = 740 - 13 * pitch;
-				if (pitch >= max_pitch) {
-					break;
-				}
-				let pitch_class = mod(pitch, 12);
-				if (current_chord !== undefined && e.chord.indexOf(pitch_class) !== -1) {
-					const is_root = e.chord[0] === pitch_class;
-					const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-					let x2 = 1000;
-					if (e.chord_end_time !== undefined) {
-						x2 = 40 + e.chord_end_time * 10;
-					}
-					line.setAttribute('x1', x);
-					line.setAttribute('y1', y);
-					line.setAttribute('x2', x2);
-					line.setAttribute('y2', y);
-					line.setAttribute('stroke',is_root ? '#f00' : '#000');
-					line.setAttribute('pointer-events', 'none');
-					svg.appendChild(line);
-				}
-				n++;
-			}
-		}
+	const w = 100;
+	const h = 50;
+	box(svg, 0, 30, 100, h, '#fff', 'Chord');
+	box(svg, 0, 30+h, 100, h, '#fff', 'Scale');
+	for (let i = 0; i < sections.length; i++) {
+		const x = 100 + i * w;
+		const section = sections[i];
+
+		let rect = box(svg, x, 30, w, h, '#fff', section.chord_name);
+		rect.dataset.section_index = i;
+		rect.onclick = click_chord_section;
+
+		rect = box(svg, x, 30+h, w, h, '#fff', full_key_name(section.scale.pat, section.scale.sig, section.scale.mode));
+		rect.dataset.section_index = i;
+		rect.onclick = click_scale_section;
+
+		rect = box(svg, x, 30+2*h, w, 20, '#fff', '...');
+		rect.dataset.section_index = i;
+		rect.onclick = click_edit_section;
+	}
+
+	const x = 100 + sections.length * w;
+	let rect = box(svg, x, 30, 100, 2*h+20, '#fff', '+');
+	rect.onclick = click_new_section;
+}
+
+function click_edit_section(e) {
+	editing_section_index = parseInt(e.target.dataset.section_index);
+	if (editing_section_index > 0) {
+		section_progressing_from = editing_section_index - 1;
+	} else {
+		section_progressing_from = undefined;
+	}
+	showing_chord_menu = true;
+	update_display();
+}
+
+function above(pitch_class, octave_pitch) {
+	let pitch = pitch_class;
+	while (pitch > octave_pitch) {
+		pitch_class -= 12;
+	}
+	while (pitch <= octave_pitch) {
+		pitch += 12;
+	}
+	return pitch;
+}
+
+function click_chord_section(e) {
+	const section_index = parseInt(e.target.dataset.section_index);
+	let octave_pitch = 16;
+	for (let pitch of sections[section_index].chord) {
+		octave_pitch = above(pitch, octave_pitch);
+		console.log(octave_pitch);
+		play_note(octave_pitch);
+	}
+	if (sections[section_index].is_tonic) {
+		let pitch = sections[section_index].chord[0];
+		octave_pitch = above(pitch, octave_pitch);
+		play_note(octave_pitch);
+	}
+}
+
+function click_new_section(e) {
+	editing_section_index = undefined;
+	if (sections.length >= 0) {
+		section_progressing_from = sections.length - 1;
+	} else {
+		section_progressing_from = undefined;
+	}
+	showing_chord_menu = true;
+	update_display();
+}
+
+function click_scale_section(e) {
+	const section_index = parseInt(e.target.dataset.section_index);
+	const pat = sections[section_index].scale.pat;
+	const sig = sections[section_index].scale.sig;
+	const mode = sections[section_index].scale.mode;
+	for (let n = 0; n <= scale_defs[pat].pitches.length; n++) {
+		const pitch = scale_note_pitch(pat, sig, mode, n);
+		play_note_with_delay(24 + pitch, n * 0.25);
 	}
 }
 
@@ -583,9 +608,8 @@ function update_display() {
 		main.classList.remove('hidden');
 		document.getElementById('key-name').textContent = 'Key: ' + full_key_name(key_pat, key_sig, key_mode);
 
-		update_staff();
 		update_chord_menu();
-		update_notes();
+		update_sections();
 		chord_menu.classList.remove('hidden');
 	}
 }
@@ -597,11 +621,16 @@ function click_key(e) {
 }
 
 function play_note(pitch) {
+	play_note_with_delay(pitch, 0);
+}
+
+function play_note_with_delay(pitch, delay) {
 	let freq = c_hz * Math.pow(2, pitch / 12);
 	init_audio();
 	let i = 0;
 
 	// Reuse an osc if possible
+	/*
 	for (let i = 0; i < max_osc_count; i++) {
 		if (osc_pitches[i] === pitch) {
 			oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
@@ -612,6 +641,7 @@ function play_note(pitch) {
 			return;
 		}
 	}
+	*/
 
 	while (true) {
 		if (i >= max_osc_count) {
@@ -632,9 +662,9 @@ function play_note(pitch) {
 		}
 		if (silence_times[i] <= ctx.currentTime) {
 			oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
-			gains[i].gain.cancelScheduledValues(ctx.currentTime);
-			gains[i].gain.setValueAtTime(0.3, ctx.currentTime);
-			gains[i].gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+			//gains[i].gain.cancelScheduledValues(ctx.currentTime);
+			gains[i].gain.setValueAtTime(0.3, ctx.currentTime + delay);
+			gains[i].gain.linearRampToValueAtTime(0, ctx.currentTime + delay + 0.5);
 			silence_times[i] = ctx.currentTime + 0.5;
 			osc_pitches[i] = pitch;
 			break;
@@ -650,50 +680,6 @@ function init_audio() {
 		gains = [];
 		silence_times = [];
 		osc_pitches = [];
-	}
-}
-
-function svg_click(e) {
-	const svg = document.getElementById('svg');
-	const dim = svg.getBoundingClientRect();
-	const x = e.clientX - dim.left;
-	const y = e.clientY - dim.top;
-	
-	if (key_pat === undefined || key_sig === undefined || key_mode === undefined) {
-		return;
-	}
-	let n = -12;
-	let nearest_dist = 10000;
-	let nearest_pitch = undefined;
-	while (true) {
-		const pitch = scale_note_pitch(key_pat, key_sig, key_mode, n);
-		if (pitch >= max_pitch) {
-			break;
-		}
-		if (pitch >= 0) {
-			const pitch_y = 740 - 13 * pitch;
-			if (Math.abs(pitch_y - y) < nearest_dist) {
-				nearest_dist = Math.abs(pitch_y - y);
-				nearest_pitch = pitch;
-			}
-		}
-		n++;
-	}
-
-	if (nearest_pitch !== undefined) {
-		if (events.length > 0 && events[events.length-1].pitch === undefined) {
-			events[events.length-1].pitch = nearest_pitch;
-		} else {
-			let time = 0;
-			if (events.length > 0) {
-				time = events[events.length - 1].time + 1;
-			}
-			events.push({time, pitch:nearest_pitch});
-			if (current_chord_index === undefined || time - events[current_chord_index].time >= beats_per_chord - 1) {
-				current_chord = undefined;
-			}
-		}
-		update_display();
 	}
 }
 
@@ -738,10 +724,8 @@ window.onload = init;
 			<g id="main">
 				<text id="key-name" x="0" y="20"></text>
 				<polygon points="200,0 220,15, 200,30" style="fill:#0c0" onclick="click_play(event)"/>
-				<rect x="30" y="30" width="1000" height="700" style="fill:#ffd" onmousedown="svg_click(event)"/>
 				<g id="scale"/>
-				<g id="staff"/>
-				<g id="notes"/>
+				<g id="sections"/>
 			</g>
 			<g id="chord-menu"/>
 		</svg>
