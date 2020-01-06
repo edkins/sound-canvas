@@ -10,7 +10,7 @@ let key_sig = undefined;
 let key_mode = undefined;
 const max_pitch = 48;
 let showing_chord_menu = false;
-let section_progressing_from = undefined;
+let section_progressing_to = undefined;
 let ctx = undefined;
 let oscs = undefined;
 let gains = undefined;
@@ -24,7 +24,9 @@ let timer_handle = undefined;
 const beats_per_chord = 4;
 let sections = [];
 let editing_section_index = undefined;
+let editing_section_index_insert = false;
 let editing_chord_scale = undefined;
+let position_in_sequence = undefined;
 
 let key_pat = 8;
 const scale_defs = [
@@ -221,32 +223,36 @@ function full_key_name(pat, sig, mode) {
 	return scale_note_name(pat, sig, mode, 0).name + ' ' + mode_name;
 }
 
-function scale_chord_quality(pat, mode, n) {
+function scale_chord_qualities(pat, mode, n) {
 	const scale = grab_scale(pat, 0, mode);
-	return custom_scale_chord_quality(scale, n);
+	return custom_scale_chord_qualities(scale, n);
 }
 
-function custom_scale_chord_quality(scale, n) {
+function custom_scale_chord_qualities(scale, n) {
 	const nclass = mod(n, 12);
 	const pitch_class = scale[nclass];
 
 	let fifth_class = mod(pitch_class + 7, 12);
 	let minor_third_class = mod(pitch_class + 3, 12);
 	let major_third_class = mod(pitch_class + 4, 12);
+	let minor_seventh_class = mod(pitch_class + 10, 12);
 
 	const fifth = scale.indexOf(fifth_class) !== -1;
 	const minor_third = scale.indexOf(minor_third_class) !== -1;
 	const major_third = scale.indexOf(major_third_class) !== -1;
+	const minor_seventh = scale.indexOf(minor_seventh_class) !== -1;
 
-	if (fifth && major_third && minor_third) {
-		return 'both';
-	} else if (fifth && major_third) {
-		return 'major';
-	} else if (fifth && minor_third) {
-		return 'minor';
-	} else {
-		return undefined;
+	let result = [];
+	if (fifth && major_third && minor_seventh) {
+		result.push('dom7');
 	}
+	if (fifth && major_third) {
+		result.push('major');
+	}
+	if (fifth && minor_third) {
+		result.push('minor');
+	}
+	return result;
 }
 
 function scale_note_pitch(pat, sig, mode, n) {
@@ -353,13 +359,15 @@ function init_key_menu() {
 	const h = 45;
 	box(svg, x0, 0, w, h, '#fff', 'Key sig');
 	for (let mode = 0; mode < scale_len; mode++) {
-		const quality = scale_chord_quality(key_pat, mode, 0);
+		const qualities = scale_chord_qualities(key_pat, mode, 0);
+		let major = qualities.indexOf('major') !== -1;
+		let minor = qualities.indexOf('minor') !== -1;
 		let fill = '#fff';
-		if (quality === 'both') {
+		if (major && minor) {
 			fill = '#f8c';
-		} else if (quality === 'major') {
+		} else if (major) {
 			fill = '#fdd';
-		} else if (quality === 'minor') {
+		} else if (minor) {
 			fill = '#cdf';
 		}
 		let mode_name = '?';
@@ -427,21 +435,20 @@ function init_main() {
 	}
 }
 
-function chord_box(svg, x, y, w, h, root, quality, name) {
+function chord_box(svg, x, y, w, h, root, quality, name, scale) {
 	const chord = make_chord(root, quality);
-	let overlap = 0;
-	if (section_progressing_from !== undefined) {
-		for (const pc of sections[section_progressing_from].chord) {
-			if (chord.indexOf(pc) !== -1) {
-				overlap++;
-			}
-		}
+	let tonic = false;
+	let dominant = false;
+	if (section_progressing_to === undefined && root === scale[0]) {
+		tonic = true;
+	} else if (section_progressing_to !== undefined && sections[section_progressing_to].is_tonic && root === mod(scale[0] + 7, 12) && (quality === 'major' || quality === 'dom7')) {
+		dominant = true;
 	}
 	let fill = '#fff';
-	if (overlap >= 2) {
+	if (tonic) {
+		fill = '#88f';
+	} else if (dominant) {
 		fill = '#f88';
-	} else if (overlap === 1) {
-		fill = '#8f8';
 	}
 	const rect = box(svg, x, y, w, h, fill, quality);
 	rect.dataset.root = root;
@@ -528,9 +535,9 @@ function update_chord_menu() {
 	const h = 45;
 	const tonic_pitch_class = scale_note_pitch(key_pat, key_sig, key_mode, 0);
 	const tonic_scale = grab_scale(key_pat, key_sig, key_mode);
-	for (let i = 0; i < 12; i++) {
+	let y = 45;
+	for (let i = 11; i >= 0; i--) {
 		const pitch_class = mod(tonic_pitch_class + i, 12);
-		const y = (12 - i) * h;
 		let n = editing_chord_scale.indexOf(pitch_class);
 		if (n === -1) {
 			if (editing_chord_scale.indexOf(mod(pitch_class + 1,12)) !== -1) {
@@ -547,20 +554,24 @@ function update_chord_menu() {
 			} else {
 				box(svg, 30, y+h/2, 45, h/2, '#888', '');
 			}
+			y += h;
 		} else {
 			let name = custom_scale_note_name(editing_chord_scale, n);
-			let quality = custom_scale_chord_quality(editing_chord_scale, n);
+			let qualities = custom_scale_chord_qualities(editing_chord_scale, n);
 
+			let fill = '#fff';
 			if (tonic_scale.indexOf(pitch_class) === -1) {
-				box(svg, 30, y, 45, h, '#f88', name);
-			} else {
-				box(svg, 30, y, 45, h, '#fff', name);
+				fill = '#f88';
 			}
-			if (quality === 'both') {
-				chord_box(svg, 75, y, 60, h, pitch_class, 'major', name);
-				chord_box(svg, 135, y, 60, h, pitch_class, 'minor', name);
-			} else if (quality !== undefined) {
-				chord_box(svg, 75, y, 120, h, pitch_class, quality, name);
+			if (qualities.length === 0) {
+				box(svg, 30, y, 45, h, fill, name);
+				y += h;
+			} else {
+				box(svg, 30, y, 45, qualities.length * h, fill, name);
+				for (const quality of qualities) {
+					chord_box(svg, 75, y, 120, h, pitch_class, quality, name, editing_chord_scale);
+					y += h;
+				}
 			}
 		}
 	}
@@ -573,7 +584,9 @@ function update_chord_menu() {
 }
 
 function make_chord(root, quality) {
-	if (quality === 'major') {
+	if (quality === 'dom7') {
+		return [root, mod(root + 4,12), mod(root + 7,12), mod(root + 10,12)];
+	} else if (quality === 'major') {
 		return [root, mod(root + 4,12), mod(root + 7,12)];
 	} else if (quality == 'minor') {
 		return [root, mod(root + 3,12), mod(root + 7,12)];
@@ -593,12 +606,15 @@ function click_chord(e) {
 		let tonic = scale_note_pitch(key_pat, key_sig, key_mode, 0);
 		let is_tonic = mod(root - tonic, 12) === 0;
 		let section = {chord: current_chord, chord_name, is_tonic, scale:{pat:stuff.pat, sig:stuff.sig, mode:stuff.mode}};
-		if (editing_section_index === undefined) {
-			sections.push(section);
+		if (editing_section_index_insert) {
+			sections.splice(editing_section_index, 0, section);
+			position_in_sequence = editing_section_index;
 		} else {
 			sections[editing_section_index] = section;
+			// leave position_in_sequence alone
 		}
 		editing_section_index = undefined;
+		editing_section_index_insert = false;
 	}
 	showing_chord_menu = false;
 	update_display();
@@ -619,8 +635,15 @@ function update_sections() {
 	const h = 50;
 	box(svg, 0, 30, 100, h, '#fff', 'Chord');
 	box(svg, 0, 30+h, 100, h, '#fff', 'Scale');
+	let x = 100;
 	for (let i = 0; i < sections.length; i++) {
-		const x = 100 + i * w;
+		if (i === position_in_sequence) {
+			let rect = box(svg, x, 30, 100, 2*h+20, '#fff', '+');
+			rect.dataset.section_index = i;
+			rect.onclick = click_new_section;
+			x += w;
+		}
+
 		const section = sections[i];
 
 		let rect = box(svg, x, 30, w, h, '#fff', section.chord_name);
@@ -634,11 +657,14 @@ function update_sections() {
 		rect = box(svg, x, 30+2*h, w, 20, '#fff', '...');
 		rect.dataset.section_index = i;
 		rect.onclick = click_edit_section;
+
+		x += w;
 	}
 
-	const x = 100 + sections.length * w;
-	let rect = box(svg, x, 30, 100, 2*h+20, '#fff', '+');
-	rect.onclick = click_new_section;
+	if (position_in_sequence === undefined) {
+		let rect = box(svg, x, 30, 100, 2*h+20, '#fff', '+');
+		rect.onclick = click_new_section;
+	}
 }
 
 function grab_scale(pat, sig, mode) {
@@ -652,10 +678,11 @@ function grab_scale(pat, sig, mode) {
 
 function click_edit_section(e) {
 	editing_section_index = parseInt(e.target.dataset.section_index);
-	if (editing_section_index > 0) {
-		section_progressing_from = editing_section_index - 1;
+	editing_section_index_insert = false;
+	if (editing_section_index < sections.length - 1) {
+		section_progressing_to = editing_section_index + 1;
 	} else {
-		section_progressing_from = undefined;
+		section_progressing_to = undefined;
 	}
 	showing_chord_menu = true;
 	const section = sections[editing_section_index];
@@ -679,7 +706,6 @@ function click_chord_section(e) {
 	let octave_pitch = 16;
 	for (let pitch of sections[section_index].chord) {
 		octave_pitch = above(pitch, octave_pitch);
-		console.log(octave_pitch);
 		play_note(octave_pitch);
 	}
 	if (sections[section_index].is_tonic) {
@@ -690,11 +716,13 @@ function click_chord_section(e) {
 }
 
 function click_new_section(e) {
-	editing_section_index = undefined;
-	if (sections.length >= 0) {
-		section_progressing_from = sections.length - 1;
+	editing_section_index_insert = true;
+	if (e.target.dataset.section_index !== undefined) {
+		section_progressing_to = parseInt(e.target.dataset.section_index);
+		editing_section_index = section_progressing_to;
 	} else {
-		section_progressing_from = undefined;
+		section_progressing_to = undefined;
+		editing_section_index = sections.length;
 	}
 	showing_chord_menu = true;
 	update_display();
@@ -736,6 +764,8 @@ function click_key(e) {
 	key_mode = parseInt(e.target.dataset.mode);
 	key_sig = parseInt(e.target.dataset.sig);
 	editing_chord_scale = grab_scale(key_pat, key_sig, key_mode);
+	editing_section_index = sections.length;
+	editing_section_index_insert = true;
 	showing_chord_menu = true;
 	update_display();
 }
