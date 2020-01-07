@@ -30,6 +30,15 @@ function arc_d(cx, cy, r, t0, t1, closed) {
 	return result;
 }
 
+function sector_d(cx, cy, r, t0, t1, closed) {
+	let x0 = cx + r * Math.cos(t0);
+	let y0 = cy + r * Math.sin(t0);
+	let x1 = cx + r * Math.cos(t1);
+	let y1 = cy + r * Math.sin(t1);
+	let result = `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 0 0 ${x1} ${y1} L ${cx} ${cy}`;
+	return result;
+}
+
 function mod(a,b) {
 	return ((a % b) + b) % b;
 }
@@ -62,15 +71,8 @@ function place_chord(chord_class, arc) {
 
 	let be_below = must_be_below;
 	let be_above = must_be_above;
-	if (be_above === undefined && be_below === undefined) {
-		if (arc === 0) {
-			be_below = last_chord;
-		} else if (arc === 1) {
-			be_above = last_chord;
-		}
-	}
 
-	let possibilities = possible_inversions(chord_class, be_below, be_above);
+	let possibilities = possible_inversions(chord_class, arc, be_below, be_above);
 	if (possibilities.length === 0) {
 		return undefined;
 	}
@@ -107,27 +109,26 @@ function chord_above(chord0, chord1) {
 	return chord0[0] > chord1[0];
 }
 
-function possible_inversions(chord_class, be_below, be_above) {
+function possible_inversions(chord_class, arc, be_below, be_above) {
 	console.log(be_below, be_above);
 	let possibilities = [];
 	for (let oct = 0; oct < 3; oct++) {
 		let disp = 12 * oct;
 		if (chord_class.length === 3) {
-			for (let inv = 0; inv < 3; inv++) {
-				let chord = [];
-				let last_pitch = undefined;
-				for (let i = 0; i < 3; i++) {
-					let pitch = chord_class[mod(i + inv, 3)] + disp;
-					if (last_pitch !== undefined) {
-						while (pitch < last_pitch) {
-							pitch += 12;
-						}
+			let inv = arc;
+			let chord = [];
+			let last_pitch = undefined;
+			for (let i = 0; i < 3; i++) {
+				let pitch = chord_class[mod(i + inv, 3)] + disp;
+				if (last_pitch !== undefined) {
+					while (pitch < last_pitch) {
+						pitch += 12;
 					}
-					last_pitch = pitch;
-					chord.push(pitch);
 				}
-				possibilities.push(chord);
+				last_pitch = pitch;
+				chord.push(pitch);
 			}
+			possibilities.push(chord);
 		} else { // don't invert seventh chords
 			let chord = [];
 			let last_pitch = chord_class[0] + disp;
@@ -247,11 +248,15 @@ function init_rainbow() {
 				const x = cx + r * Math.sin(theta);
 				const y = cy - r * Math.cos(theta);
 
-				for (let arc = 0; arc < 2; arc++) {
+				for (let arc = 0; arc < 3; arc++) {
 					let circle = document.createElementNS('http://www.w3.org/2000/svg','path');
-					circle.setAttribute('d', arc_d(x, y, 26, (arc - 0.5) * Math.PI, (arc + 0.5) * Math.PI, true));
+					const assume_major = i <= 1;
+					const ch = assume_major ? [0, 4, 7, 12, 12+4] : [0, 3, 7, 12, 12+3];
+					const t1 = (pitch_class + ch[arc] + ch[arc+1]) * Math.PI / 12;
+					const t0 = (pitch_class + ch[arc+1] + ch[arc+2]) * Math.PI / 12;
+					circle.setAttribute('d', sector_d(x, y, 26, t0, t1));
 					circle.setAttribute('stroke', '#ccc');
-					if (central_i && central_j) {
+					if (arc === 0 && central_i && central_j) {
 						circle.classList.add('scale');
 					} else if (almost_central_j) {
 						circle.classList.add('near');
@@ -259,7 +264,7 @@ function init_rainbow() {
 						circle.classList.add('far');
 					}
 					circle.dataset.pitch_class = pitch_class;
-					circle.dataset.assume_major = i <= 1;
+					circle.dataset.assume_major = assume_major;
 					circle.dataset.arc = arc;
 					circle.dataset.i = i;
 					circle.dataset.j = j;
