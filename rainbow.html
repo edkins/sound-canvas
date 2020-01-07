@@ -252,11 +252,11 @@ function init_rainbow() {
 					let circle = document.createElementNS('http://www.w3.org/2000/svg','path');
 					const assume_major = i <= 1;
 					const ch = assume_major ? [0, 4, 7, 12, 12+4] : [0, 3, 7, 12, 12+3];
-					const t1 = (pitch_class + ch[arc] + ch[arc+1]) * Math.PI / 12;
-					const t0 = (pitch_class + ch[arc+1] + ch[arc+2]) * Math.PI / 12;
+					const t1 = (2 * pitch_class + ch[arc] + ch[arc+1]) * Math.PI / 12;
+					const t0 = (2 * pitch_class + ch[arc+1] + ch[arc+2]) * Math.PI / 12;
 					circle.setAttribute('d', sector_d(x, y, 26, t0, t1));
-					circle.setAttribute('stroke', '#ccc');
-					if (arc === 0 && central_i && central_j) {
+					circle.setAttribute('stroke', '#888');
+					if (central_i && central_j) {
 						circle.classList.add('scale');
 					} else if (almost_central_j) {
 						circle.classList.add('near');
