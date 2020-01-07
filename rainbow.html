@@ -18,8 +18,16 @@ let last_chord = undefined;
 let must_be_above = undefined;
 let must_be_below = undefined;
 
-function arc_d(cx, cy, r) {
-	return `M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`;
+function arc_d(cx, cy, r, t0, t1, closed) {
+	let x0 = cx + r * Math.cos(t0);
+	let y0 = cy + r * Math.sin(t0);
+	let x1 = cx + r * Math.cos(t1);
+	let y1 = cy + r * Math.sin(t1);
+	let result = `M ${x0} ${y0} A ${r} ${r} 0 0 0 ${x1} ${y1}`;
+	if (closed) {
+		result += `L ${x0} ${y0}`;
+	}
+	return result;
 }
 
 function mod(a,b) {
@@ -47,11 +55,22 @@ function init_audio() {
 }
 
 // Choose octave and inversion
-function place_chord(chord_class) {
-	let possibilities = possible_inversions(chord_class);
+function place_chord(chord_class, arc) {
 	if (last_chord === undefined) {
 		last_chord = [12, 16, 19];    // pick something arbitrary to be adjacent to
 	}
+
+	let be_below = must_be_below;
+	let be_above = must_be_above;
+	if (be_above === undefined && be_below === undefined) {
+		if (arc === 0) {
+			be_below = last_chord;
+		} else if (arc === 1) {
+			be_above = last_chord;
+		}
+	}
+
+	let possibilities = possible_inversions(chord_class, be_below, be_above);
 	if (possibilities.length === 0) {
 		return undefined;
 	}
@@ -88,7 +107,8 @@ function chord_above(chord0, chord1) {
 	return chord0[0] > chord1[0];
 }
 
-function possible_inversions(chord_class) {
+function possible_inversions(chord_class, be_below, be_above) {
+	console.log(be_below, be_above);
 	let possibilities = [];
 	for (let oct = 0; oct < 3; oct++) {
 		let disp = 12 * oct;
@@ -123,16 +143,12 @@ function possible_inversions(chord_class) {
 		}
 	}
 
-	if (chord_class.length !== 3) {
-		console.log(possibilities);
-	}
-
 	let result = [];
 	for (let chord of possibilities) {
-		if (must_be_above !== undefined && !chord_above(chord, must_be_above)) {
+		if (be_above !== undefined && !chord_above(chord, be_above)) {
 			continue;
 		}
-		if (must_be_below !== undefined && !chord_below(chord, must_be_below)) {
+		if (be_below !== undefined && !chord_below(chord, be_below)) {
 			continue;
 		}
 		if (!is_sorted(chord)) {
@@ -174,21 +190,23 @@ function play_chord(chord) {
 	}
 }
 
-function ijs_to_chord(ijs) {
+function ijs_to_chord(ijs, arc) {
 	let chord = [];
 	for (let ij of ijs) {
 		const pitch_class = to_pitch_class(ij[0], ij[1]);
 		chord.push(pitch_class);
 	}
-	return place_chord(chord);
+	return place_chord(chord, arc);
 }
 
 function click_circle(e) {
-	const ijs = relevant_displacements(parseInt(e.target.dataset.i), parseInt(e.target.dataset.j), e.shiftKey);
-	const chord = ijs_to_chord(ijs);
+	const arc = parseInt(e.target.dataset.arc);
+	const ijs = relevant_displacements(parseInt(e.target.dataset.i), parseInt(e.target.dataset.j), e.shiftKey, arc);
+	const chord = ijs_to_chord(ijs, arc);
 	if (chord !== undefined) {
 		play_chord(chord);
 	}
+	hover(e.target);
 }
 
 function to_pitch_class(i, j) {
@@ -207,7 +225,7 @@ function init_rainbow() {
 	for (let i = 0; i < 4; i++) {
 		let path = document.createElementNS('http://www.w3.org/2000/svg','path');
 		const r = 260 + 40 * i;
-		path.setAttribute('d', arc_d(cx, cy, r));
+		path.setAttribute('d', arc_d(cx, cy, r, 0, Math.PI, false));
 		path.setAttribute('stroke', '#000');
 		path.setAttribute('fill', 'none');
 		svg.appendChild(path);
@@ -229,26 +247,27 @@ function init_rainbow() {
 				const x = cx + r * Math.sin(theta);
 				const y = cy - r * Math.cos(theta);
 
-				let circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
-				circle.setAttribute('cx', x);
-				circle.setAttribute('cy', y);
-				circle.setAttribute('r', 26);
-				circle.setAttribute('stroke', '#000');
-				if (central_i && central_j) {
-					circle.classList.add('scale');
-				} else if (almost_central_j) {
-					circle.classList.add('near');
-				} else {
-					circle.classList.add('far');
+				for (let arc = 0; arc < 2; arc++) {
+					let circle = document.createElementNS('http://www.w3.org/2000/svg','path');
+					circle.setAttribute('d', arc_d(x, y, 26, (arc - 0.5) * Math.PI, (arc + 0.5) * Math.PI, true));
+					circle.setAttribute('stroke', '#ccc');
+					if (central_i && central_j) {
+						circle.classList.add('scale');
+					} else if (almost_central_j) {
+						circle.classList.add('near');
+					} else {
+						circle.classList.add('far');
+					}
+					circle.dataset.pitch_class = pitch_class;
+					circle.dataset.assume_major = i <= 1;
+					circle.dataset.arc = arc;
+					circle.dataset.i = i;
+					circle.dataset.j = j;
+					circle.onclick = click_circle;
+					circle.onmousemove = circle_mousemove;
+					circle.onmouseout = circle_mouseout;
+					svg.appendChild(circle);
 				}
-				circle.dataset.pitch_class = pitch_class;
-				circle.dataset.assume_major = i <= 1;
-				circle.dataset.i = i;
-				circle.dataset.j = j;
-				circle.onclick = click_circle;
-				circle.onmousemove = circle_mousemove;
-				circle.onmouseout = circle_mouseout;
-				svg.appendChild(circle);
 
 				let text = document.createElementNS('http://www.w3.org/2000/svg','text');
 				text.setAttribute('x', x);
@@ -300,14 +319,15 @@ function circle_mouseout(e) {
 	unhover();
 }
 
-function find_elem(i, j) {
+function find_elems(i, j) {
 	const svg = document.getElementById('svg');
-	for (let circle of svg.getElementsByTagName('circle')) {
+	let result = [];
+	for (let circle of svg.getElementsByTagName('path')) {
 		if (parseInt(circle.dataset.i) === i && parseInt(circle.dataset.j) === j) {
-			return circle;
+			result.push(circle);
 		}
 	}
-	return undefined;
+	return result;
 }
 
 function find_piano(pitch) {
@@ -338,7 +358,7 @@ function unhover() {
 	hover_chord = undefined;
 }
 
-function relevant_displacements(i, j, include_seventh) {
+function relevant_displacements(i, j, include_seventh, arc) {
 	let third = undefined;
 	if (i <= 1) {   // major
 		i++;
@@ -364,17 +384,17 @@ function hover(hover_circle, include_seventh) {
 
 	let i = parseInt(hover_circle.dataset.i);
 	let j = parseInt(hover_circle.dataset.j);
-	let ijs = relevant_displacements(i, j, include_seventh);
+	let arc = parseInt(hover_circle.dataset.arc);
+	let ijs = relevant_displacements(i, j, include_seventh, arc);
 	for (let ij of ijs) {
-		const circle = find_elem(ij[0], ij[1]);
-		if (circle !== undefined) {
+		for (let circle of find_elems(ij[0], ij[1])) {
 			hover_circles.push(circle);
 			circle.classList.add('active');
 		}
 	}
 
 	hover_pianos = [];
-	hover_chord = ijs_to_chord(ijs);
+	hover_chord = ijs_to_chord(ijs, arc);
 	if (hover_chord !== undefined) {
 		for (let pitch of hover_chord) {
 			const rect = find_piano(pitch);
