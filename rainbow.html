@@ -10,6 +10,13 @@ let oscs = [];
 let gains = [];
 let ctx = undefined;
 const max_chord_length = 4;
+let hover_element = undefined;
+let hover_circles = [];
+let hover_pianos = [];
+let hover_chord = undefined;
+let last_chord = undefined;
+let must_be_above = undefined;
+let must_be_below = undefined;
 
 function arc_d(cx, cy, r) {
 	return `M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`;
@@ -39,15 +46,126 @@ function init_audio() {
 	}
 }
 
+// Choose octave and inversion
+function place_chord(chord_class) {
+	let possibilities = possible_inversions(chord_class);
+	if (last_chord === undefined) {
+		last_chord = [12, 16, 19];    // pick something arbitrary to be adjacent to
+	}
+	if (possibilities.length === 0) {
+		return undefined;
+	}
+	let best_chord = possibilities[0];
+	let best_distance = chord_distance(best_chord, last_chord);
+	for (let chord of possibilities) {
+		const distance = chord_distance(chord, last_chord);
+		if (distance < best_distance) {
+			best_chord = chord;
+			best_distance = distance;
+		}
+	}
+	return best_chord;
+}
+
+function chord_distance(chord0, chord1) {
+	let lower0 = chord0[0];
+	let upper0 = chord0[chord0.length-1];
+	let lower1 = chord1[0];
+	let upper1 = chord1[chord1.length-1];
+	let dist = Math.abs(lower1 - lower0) + Math.abs(upper1 - upper0);
+	if (upper0 === upper1) {
+		// punish chords that end on the same note
+		dist += 6;
+	}
+	return dist;
+}
+
+function chord_below(chord0, chord1) {
+	return chord0[chord0.length - 1] < chord1[chord1.length - 1];
+}
+
+function chord_above(chord0, chord1) {
+	return chord0[0] > chord1[0];
+}
+
+function possible_inversions(chord_class) {
+	let possibilities = [];
+	for (let oct = 0; oct < 3; oct++) {
+		let disp = 12 * oct;
+		if (chord_class.length === 3) {
+			for (let inv = 0; inv < 3; inv++) {
+				let chord = [];
+				let last_pitch = undefined;
+				for (let i = 0; i < 3; i++) {
+					let pitch = chord_class[mod(i + inv, 3)] + disp;
+					if (last_pitch !== undefined) {
+						while (pitch < last_pitch) {
+							pitch += 12;
+						}
+					}
+					last_pitch = pitch;
+					chord.push(pitch);
+				}
+				possibilities.push(chord);
+			}
+		} else { // don't invert seventh chords
+			let chord = [];
+			let last_pitch = chord_class[0] + disp;
+			for (let i = 0; i < chord_class.length; i++) {
+				let pitch = chord_class[i];
+				while (pitch < last_pitch) {
+					pitch += 12;
+				}
+				chord.push(pitch);
+				last_pitch = pitch;
+			}
+			possibilities.push(chord);
+		}
+	}
+
+	if (chord_class.length !== 3) {
+		console.log(possibilities);
+	}
+
+	let result = [];
+	for (let chord of possibilities) {
+		if (must_be_above !== undefined && !chord_above(chord, must_be_above)) {
+			continue;
+		}
+		if (must_be_below !== undefined && !chord_below(chord, must_be_below)) {
+			continue;
+		}
+		if (!is_sorted(chord)) {
+			throw 'not sorted';
+		}
+		result.push(chord);
+	}
+	return result;
+}
+
+function is_sorted(chord) {
+	let x = chord[0];
+	for (let y of chord) {
+		if (y < x) {
+			return false;
+		}
+		x = y;
+	}
+	return true;
+}
+
 function play_chord(chord) {
 	init_audio();
 	if (chord.length > oscs.length) {
 		throw 'Chord too long';
 	}
+	last_chord = chord;
+	must_be_above = undefined;
+	must_be_below = undefined;
 	for (let i = 0; i < chord.length; i++) {
 		const pitch = chord[i];
 		const freq = c_hz * Math.pow(2, pitch / 12);
-		const delay = 0.01 + i * .2;
+		const delay = 0.01; //0.01 + i * .2;
 		oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
 		gains[i].gain.cancelScheduledValues(ctx.currentTime);
 		gains[i].gain.setValueAtTime(0, ctx.currentTime);
@@ -56,25 +174,29 @@ function play_chord(chord) {
 	}
 }
 
-function click_circle(e) {
-	const pitch_class = parseInt(e.target.dataset.pitch_class);
-	const root = pitch_class;   // TODO: choose appropriate octave
-	let major = e.target.dataset.assume_major === 'true';
-	if (e.ctrlKey) {
-		major = !major;
+function ijs_to_chord(ijs) {
+	let chord = [];
+	for (let ij of ijs) {
+		const pitch_class = to_pitch_class(ij[0], ij[1]);
+		chord.push(pitch_class);
 	}
-	let minor_seventh = e.shiftKey;
+	return place_chord(chord);
+}
 
-	let chord = undefined;
-	if (major) {
-		chord = [root, root + 4, root + 7];
-	} else {
-		chord = [root, root + 3, root + 7];
+function click_circle(e) {
+	const ijs = relevant_displacements(parseInt(e.target.dataset.i), parseInt(e.target.dataset.j), e.shiftKey);
+	const chord = ijs_to_chord(ijs);
+	if (chord !== undefined) {
+		play_chord(chord);
 	}
-	if (minor_seventh) {
-		chord.push(root + 10);
+}
+
+function to_pitch_class(i, j) {
+	const ij = i + 7 * j + 6;
+	if (mod(ij, 2) === 0) {
+		return mod(ij >> 1, 12);
 	}
-	play_chord(chord);
+	return undefined;
 }
 
 function init_rainbow() {
@@ -93,12 +215,11 @@ function init_rainbow() {
 		const names_sharp = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 		const names_flat  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
 		for (let j = -10; j <= 10; j++) {
-			const ij = i + 7 * j + 6;
+			const pitch_class = to_pitch_class(i, j);
 			const central_i = (i >= 1 && i <= 2);
 			const central_j = (j >= -4 && j <= 3);
 			const almost_central_j = (j >= -5 && j <= 4);
-			if (ij % 2 === 0) {
-				const pitch_class = mod(ij >> 1, 12);
+			if (pitch_class !== undefined) {
 				let name = names_flat[pitch_class];
 				if (i >= 2) {
 					name = names_sharp[pitch_class];
@@ -113,16 +234,20 @@ function init_rainbow() {
 				circle.setAttribute('cy', y);
 				circle.setAttribute('r', 26);
 				circle.setAttribute('stroke', '#000');
-				let fill = '#fff';
 				if (central_i && central_j) {
-					fill = '#fcc';
+					circle.classList.add('scale');
 				} else if (almost_central_j) {
-					fill = '#fee';
+					circle.classList.add('near');
+				} else {
+					circle.classList.add('far');
 				}
-				circle.setAttribute('fill', fill);
 				circle.dataset.pitch_class = pitch_class;
 				circle.dataset.assume_major = i <= 1;
+				circle.dataset.i = i;
+				circle.dataset.j = j;
 				circle.onclick = click_circle;
+				circle.onmousemove = circle_mousemove;
+				circle.onmouseout = circle_mouseout;
 				svg.appendChild(circle);
 
 				let text = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -141,12 +266,193 @@ function init_rainbow() {
 
 function init() {
 	init_rainbow();
+	init_piano();
+}
+
+function keydown(e) {
+	if (e.key === 'ArrowRight') {
+		must_be_above = hover_chord;
+		last_chord = hover_chord;
+		must_be_below = undefined;
+	}
+	if (e.key === 'ArrowLeft') {
+		must_be_below = hover_chord;
+		last_chord = hover_chord;
+		must_be_above = undefined;
+	}
+	if (hover_element !== undefined) {
+		hover(hover_element, e.shiftKey);
+	}
+}
+
+function keyup(e) {
+	if (hover_element !== undefined) {
+		hover(hover_element, e.shiftKey);
+	}
+}
+
+function circle_mousemove(e) {
+	hover_element = e.target;
+	hover(hover_element, e.shiftKey);
+}
+
+function circle_mouseout(e) {
+	unhover();
+}
+
+function find_elem(i, j) {
+	const svg = document.getElementById('svg');
+	for (let circle of svg.getElementsByTagName('circle')) {
+		if (parseInt(circle.dataset.i) === i && parseInt(circle.dataset.j) === j) {
+			return circle;
+		}
+	}
+	return undefined;
+}
+
+function find_piano(pitch) {
+	const white_notes = document.getElementById('white_notes');
+	const black_notes = document.getElementById('black_notes');
+	for (let rect of white_notes.getElementsByTagName('rect')) {
+		if (parseInt(rect.dataset.pitch) === pitch) {
+			return rect;
+		}
+	}
+	for (let rect of black_notes.getElementsByTagName('rect')) {
+		if (parseInt(rect.dataset.pitch) === pitch) {
+			return rect;
+		}
+	}
+	return undefined;
+}
+
+function unhover() {
+	for (let circle of hover_circles) {
+		circle.classList.remove('active');
+	}
+	for (let rect of hover_pianos) {
+		rect.classList.remove('active');
+	}
+	hover_circles = [];
+	hover_pianos = [];
+	hover_chord = undefined;
+}
+
+function relevant_displacements(i, j, include_seventh) {
+	let third = undefined;
+	if (i <= 1) {   // major
+		i++;
+		j--;
+		third = [i - 1, j + 1];
+	} else {       // minor;
+		i--;
+		j--;
+		third = [i + 1, j + 1];
+	}
+	let root = [i, j];
+	let fifth = [i, j+2];
+	let result = [root, third, fifth];
+	if (include_seventh) {
+		result.push([i - 1, j + 3]);
+	}
+	return result;
+}
+
+function hover(hover_circle, include_seventh) {
+	unhover();
+	hover_circles = [];
+
+	let i = parseInt(hover_circle.dataset.i);
+	let j = parseInt(hover_circle.dataset.j);
+	let ijs = relevant_displacements(i, j, include_seventh);
+	for (let ij of ijs) {
+		const circle = find_elem(ij[0], ij[1]);
+		if (circle !== undefined) {
+			hover_circles.push(circle);
+			circle.classList.add('active');
+		}
+	}
+
+	hover_pianos = [];
+	hover_chord = ijs_to_chord(ijs);
+	if (hover_chord !== undefined) {
+		for (let pitch of hover_chord) {
+			const rect = find_piano(pitch);
+			if (rect !== undefined) {
+				hover_pianos.push(rect);
+				rect.classList.add('active');
+			}
+		}
+	}
+}
+
+function click_piano(e) {
+	const pitch = parseInt(e.target.dataset.pitch);
+	play_chord([pitch]);
+}
+
+function init_piano() {
+	const white = [true,false,true,false,true,true,false,true,false,true,false,true];
+	const white_notes = document.getElementById('white_notes');
+	const black_notes = document.getElementById('black_notes');
+	let x = 120;
+	const y = 450;
+	const w = 20;
+	const h = 90;
+	for (let pitch = 0; pitch <= 48; pitch++) {
+		const pitch_class = mod(pitch, 12);
+		let rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+		rect.dataset.pitch = pitch;
+		rect.onclick = click_piano;
+		if (white[pitch_class]) {
+			rect.setAttribute('x', x);
+			rect.setAttribute('y', y);
+			rect.setAttribute('width', w);
+			rect.setAttribute('height', h);
+			rect.setAttribute('stroke', '#000');
+			rect.classList.add('white_note');
+			white_notes.appendChild(rect);
+			x += w;
+		} else {
+			rect.setAttribute('x', x - w * 0.3);
+			rect.setAttribute('y', y);
+			rect.setAttribute('width', w * 0.6);
+			rect.setAttribute('height', h * 0.6);
+			rect.setAttribute('stroke', '#000');
+			rect.classList.add('black_note');
+			black_notes.appendChild(rect);
+		}
+	}
 }
 
 window.onload = init;
 	</script>
-	<body>
+<style>
+.scale {
+	fill: #fcc;
+}
+.near {
+	fill: #fee;
+}
+.far {
+	fill: #fff;
+}
+
+.white_note {
+	fill: #fff;
+}
+.black_note {
+	fill: #000;
+}
+
+.active {
+	fill: #cdf;
+}
+</style>
+	<body onkeydown="keydown(event)" onkeyup="keyup(event)">
 		<svg id="svg" width="1000" height="600">
+			<g id="white_notes"/>
+			<g id="black_notes"/>
 		</svg>
 	</body>
 </html>
