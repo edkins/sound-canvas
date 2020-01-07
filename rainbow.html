@@ -1,0 +1,152 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+const c_hz = 440 * Math.pow(2, -9/12);
+let oscs = [];
+let gains = [];
+let ctx = undefined;
+const max_chord_length = 4;
+
+function arc_d(cx, cy, r) {
+	return `M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`;
+}
+
+function mod(a,b) {
+	return ((a % b) + b) % b;
+}
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		for (let i = 0; i < max_chord_length; i++) {
+			const osc = ctx.createOscillator();
+			osc.frequency.setValueAtTime(c_hz, ctx.currentTime);
+			osc.start();
+
+			const gain = ctx.createGain();
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+
+			oscs.push(osc);
+			gains.push(gain);
+		}
+	}
+}
+
+function play_chord(chord) {
+	init_audio();
+	if (chord.length > oscs.length) {
+		throw 'Chord too long';
+	}
+	for (let i = 0; i < chord.length; i++) {
+		const pitch = chord[i];
+		const freq = c_hz * Math.pow(2, pitch / 12);
+		const delay = 0.01 + i * .2;
+		oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
+		gains[i].gain.cancelScheduledValues(ctx.currentTime);
+		gains[i].gain.setValueAtTime(0, ctx.currentTime);
+		gains[i].gain.setValueAtTime(0.3, ctx.currentTime + delay);
+		gains[i].gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5 + delay);
+	}
+}
+
+function click_circle(e) {
+	const pitch_class = parseInt(e.target.dataset.pitch_class);
+	const root = pitch_class;   // TODO: choose appropriate octave
+	let major = e.target.dataset.assume_major === 'true';
+	if (e.ctrlKey) {
+		major = !major;
+	}
+	let minor_seventh = e.shiftKey;
+
+	let chord = undefined;
+	if (major) {
+		chord = [root, root + 4, root + 7];
+	} else {
+		chord = [root, root + 3, root + 7];
+	}
+	if (minor_seventh) {
+		chord.push(root + 10);
+	}
+	play_chord(chord);
+}
+
+function init_rainbow() {
+	const svg = document.getElementById('svg');
+
+	const cx = 420;
+	const cy = 420;
+	for (let i = 0; i < 4; i++) {
+		let path = document.createElementNS('http://www.w3.org/2000/svg','path');
+		const r = 260 + 40 * i;
+		path.setAttribute('d', arc_d(cx, cy, r));
+		path.setAttribute('stroke', '#000');
+		path.setAttribute('fill', 'none');
+		svg.appendChild(path);
+
+		const names_sharp = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+		const names_flat  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+		for (let j = -10; j <= 10; j++) {
+			const ij = i + 7 * j + 6;
+			const central_i = (i >= 1 && i <= 2);
+			const central_j = (j >= -4 && j <= 3);
+			const almost_central_j = (j >= -5 && j <= 4);
+			if (ij % 2 === 0) {
+				const pitch_class = mod(ij >> 1, 12);
+				let name = names_flat[pitch_class];
+				if (i >= 2) {
+					name = names_sharp[pitch_class];
+				}
+
+				const theta = j * Math.PI / 20;
+				const x = cx + r * Math.sin(theta);
+				const y = cy - r * Math.cos(theta);
+
+				let circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+				circle.setAttribute('cx', x);
+				circle.setAttribute('cy', y);
+				circle.setAttribute('r', 26);
+				circle.setAttribute('stroke', '#000');
+				let fill = '#fff';
+				if (central_i && central_j) {
+					fill = '#fcc';
+				} else if (almost_central_j) {
+					fill = '#fee';
+				}
+				circle.setAttribute('fill', fill);
+				circle.dataset.pitch_class = pitch_class;
+				circle.dataset.assume_major = i <= 1;
+				circle.onclick = click_circle;
+				svg.appendChild(circle);
+
+				let text = document.createElementNS('http://www.w3.org/2000/svg','text');
+				text.setAttribute('x', x);
+				text.setAttribute('y', y);
+				text.setAttribute('dominant-baseline', 'central');
+				text.setAttribute('text-anchor', 'middle');
+				text.setAttribute('fill', '#000');
+				text.setAttribute('pointer-events','none');
+				text.textContent = name;
+				svg.appendChild(text);
+			}
+		}			
+	}
+}
+
+function init() {
+	init_rainbow();
+}
+
+window.onload = init;
+	</script>
+	<body>
+		<svg id="svg" width="1000" height="600">
+		</svg>
+	</body>
+</html>
