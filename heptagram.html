@@ -1,0 +1,80 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+function mod(a,b) {
+	return ((a % b) + b) % b;
+}
+
+function init_heptagram() {
+	const lines = document.getElementById('lines');
+	const circles = document.getElementById('circles');
+	const texts = document.getElementById('texts');
+	const labels = ['D','F','A','C','E','G','B'];
+	//const labels = ['E','G','B','D','F#','A','C#'];
+	const pitch_classes = [2, 5, 9, 0, 4, 7, 11];
+	const mods = [0,1,-1,1,-1,1,-1];
+	const cx = 300;
+	const cy = 300;
+	const r = 200;
+	for (let i = 0; i < 7; i++) {
+		const theta = i * Math.PI * 2 / 7;
+		const x = cx - r * Math.sin(theta);
+		const y = cy + r * Math.cos(theta);
+		let circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+		circle.setAttribute('cx', x);
+		circle.setAttribute('cy', y);
+		circle.setAttribute('r', 26);
+		circle.setAttribute('stroke', '#888');
+		circle.setAttribute('fill', '#fff');
+		circle.dataset.pitch_class = pitch_classes[i];
+		circles.appendChild(circle);
+
+		let text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', x);
+		text.setAttribute('y', y);
+		text.setAttribute('dominant-baseline', 'central');
+		text.setAttribute('text-anchor', 'middle');
+		text.setAttribute('fill', '#000');
+		text.setAttribute('pointer-events','none');
+		text.textContent = labels[i];
+		texts.appendChild(text);
+
+		const i2 = mod(i + 3, 7);
+		const theta2 = i2 * Math.PI * 2 / 7;
+		const x3 = cx - r * Math.sin(theta2);
+		const y3 = cy + r * Math.cos(theta2);
+		const length = Math.sqrt((x3 - x) * (x3 - x) + (y3 - y) * (y3 - y));
+		const x1 = x + 26 * (x3 - x) / length;
+		const y1 = y + 26 * (y3 - y) / length;
+		const x2 = x3 - 26 * (x3 - x) / length;
+		const y2 = y3 - 26 * (y3 - y) / length;
+		let line = document.createElementNS('http://www.w3.org/2000/svg','line');
+		line.setAttribute('x1', x1);
+		line.setAttribute('y1', y1);
+		line.setAttribute('x2', x2);
+		line.setAttribute('y2', y2);
+		line.setAttribute('stroke', '#000');
+		if (mod(pitch_classes[i] - pitch_classes[i2], 12) === 1) {
+			line.setAttribute('marker-start', 'url(#arrow)');
+		}
+		lines.appendChild(line);
+	}
+}
+
+window.onload = init_heptagram;
+	</script>
+	<body>
+		<svg width="1000" height="1000" id="svg">
+			<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="30" markerHeight="15" orient="auto-start-reverse">
+				<path d="M 0 0 L 10 5 L 0 10 z" />
+			</marker>
+			<g id="lines"/>
+			<g id="circles"/>
+			<g id="texts"/>
+		</svg>
+	</body>
+</html>

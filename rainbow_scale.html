@@ -1,0 +1,354 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+const c_hz = 440 * Math.pow(2, -9/12);
+let oscs = [];
+let gains = [];
+let ctx = undefined;
+const max_chord_length = 4;
+let hover_element = undefined;
+let hover_circles = [];
+let hover_pianos = [];
+let last_pitch = 12;
+let must_be_above = undefined;
+let must_be_below = undefined;
+
+function choose_octave(pitch_class) {
+	let best_distance = undefined;
+	let best_pitch = undefined;
+	for (let oct = 0; oct < 4; oct++) {
+		let pitch = pitch_class + 12 * oct;
+		let distance = Math.abs(last_pitch - pitch);
+		if (best_distance === undefined || distance < best_distance) {
+			best_distance = distance;
+			best_pitch = pitch;
+		}
+	}
+	return best_pitch;
+}
+
+function arc_d(cx, cy, r, t0, t1, closed) {
+	let x0 = cx + r * Math.cos(t0);
+	let y0 = cy + r * Math.sin(t0);
+	let x1 = cx + r * Math.cos(t1);
+	let y1 = cy + r * Math.sin(t1);
+	let result = `M ${x0} ${y0} A ${r} ${r} 0 0 0 ${x1} ${y1}`;
+	if (closed) {
+		result += `L ${x0} ${y0}`;
+	}
+	return result;
+}
+
+function sector_d(cx, cy, r, t0, t1, closed) {
+	let x0 = cx + r * Math.cos(t0);
+	let y0 = cy + r * Math.sin(t0);
+	let x1 = cx + r * Math.cos(t1);
+	let y1 = cy + r * Math.sin(t1);
+	let result = `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 0 0 ${x1} ${y1} L ${cx} ${cy}`;
+	return result;
+}
+
+function mod(a,b) {
+	return ((a % b) + b) % b;
+}
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		for (let i = 0; i < max_chord_length; i++) {
+			const osc = ctx.createOscillator();
+			osc.frequency.setValueAtTime(c_hz, ctx.currentTime);
+			osc.start();
+
+			const gain = ctx.createGain();
+			gain.gain.setValueAtTime(0, ctx.currentTime);
+
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+
+			oscs.push(osc);
+			gains.push(gain);
+		}
+	}
+}
+
+function play_note(pitch) {
+	last_pitch = pitch;
+	play_chord([pitch]);
+}
+
+function play_chord(chord) {
+	init_audio();
+	if (chord.length > oscs.length) {
+		throw 'Chord too long';
+	}
+	must_be_above = undefined;
+	must_be_below = undefined;
+	for (let i = 0; i < chord.length; i++) {
+		const pitch = chord[i];
+		const freq = c_hz * Math.pow(2, pitch / 12);
+		const delay = 0.01; //0.01 + i * .2;
+		oscs[i].frequency.setValueAtTime(freq, ctx.currentTime);
+		gains[i].gain.cancelScheduledValues(ctx.currentTime);
+		gains[i].gain.setValueAtTime(0, ctx.currentTime);
+		gains[i].gain.setValueAtTime(0.3, ctx.currentTime + delay);
+		gains[i].gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5 + delay);
+	}
+}
+
+function click_circle(e) {
+	const pitch_class = parseInt(e.target.dataset.pitch_class);
+	const pitch = choose_octave(pitch_class);
+	play_note(pitch);
+	hover(e.target);
+}
+
+function to_pitch_class(i, j) {
+	const ij = i + 7 * j + 6;
+	if (mod(ij, 2) === 0) {
+		return mod(ij >> 1, 12);
+	}
+	return undefined;
+}
+
+function init_rainbow() {
+	const svg = document.getElementById('svg');
+
+	const cx = 420;
+	const cy = 420;
+	const names_sharp = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+	const names_flat  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+
+	for (let i = 0; i < 4; i++) {
+		let path = document.createElementNS('http://www.w3.org/2000/svg','path');
+		const r = 260 + 40 * i;
+		path.setAttribute('d', arc_d(cx, cy, r, 0, Math.PI, false));
+		path.setAttribute('stroke', '#000');
+		path.setAttribute('fill', 'none');
+		svg.appendChild(path);
+
+		for (let j = -10; j <= 10; j++) {
+			const pitch_class = to_pitch_class(i, j);
+			const central_i = (i >= 1 && i <= 2);
+			const central_j = (j >= -4 && j <= 3);
+			const almost_central_j = (j >= -5 && j <= 4);
+			if (pitch_class !== undefined) {
+				let name = names_flat[pitch_class];
+				if (i >= 2) {
+					name = names_sharp[pitch_class];
+				}
+
+				const theta = j * Math.PI / 20;
+				const x = cx + r * Math.sin(theta);
+				const y = cy - r * Math.cos(theta);
+
+				let circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+				circle.setAttribute('cx', x);
+				circle.setAttribute('cy', y);
+				circle.setAttribute('r', 26);
+				circle.setAttribute('stroke', '#888');
+				if (central_i && central_j) {
+					circle.classList.add('scale');
+				} else if (almost_central_j) {
+					circle.classList.add('near');
+				} else {
+					circle.classList.add('far');
+				}
+				circle.dataset.pitch_class = pitch_class;
+				circle.dataset.i = i;
+				circle.dataset.j = j;
+				circle.onclick = click_circle;
+				circle.onmousemove = circle_mousemove;
+				circle.onmouseout = circle_mouseout;
+				svg.appendChild(circle);
+
+				let text = document.createElementNS('http://www.w3.org/2000/svg','text');
+				text.setAttribute('x', x);
+				text.setAttribute('y', y);
+				text.setAttribute('dominant-baseline', 'central');
+				text.setAttribute('text-anchor', 'middle');
+				text.setAttribute('fill', '#000');
+				text.setAttribute('pointer-events','none');
+				text.textContent = name;
+				svg.appendChild(text);
+			}
+		}			
+	}
+
+	const minis = [
+		{pitch_class: 4, i: 1.4, j: -3.4},
+		{pitch_class: 7, i: 1.5, j: -2.5},
+		{pitch_class: 11, i: 1.4, j: -1.4},
+		{pitch_class: 2, i: 1.5, j: -0.5},
+		{pitch_class: 5, i: 1.6, j: 0.4},
+		{pitch_class: 9, i: 1.5, j: 1.5},
+		{pitch_class: 0, i: 1.6, j: 2.4},
+	];
+	for (let mini of minis) {
+		let name = names_flat[mini.pitch_class];
+		let circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+		const r = 260 + 40 * mini.i;
+		const theta = mini.j * Math.PI / 20;
+		const x = cx + r * Math.sin(theta);
+		const y = cy - r * Math.cos(theta);
+		circle.setAttribute('cx', x);
+		circle.setAttribute('cy', y);
+		circle.setAttribute('r', 8);
+		circle.setAttribute('stroke', '#888');
+		circle.classList.add('scale');
+		circle.dataset.pitch_class = mini.pitch_class;
+		circle.onclick = click_circle;
+		circle.onmousemove = circle_mousemove;
+		circle.onmouseout = circle_mouseout;
+		svg.appendChild(circle);
+	}
+
+
+}
+
+function init() {
+	init_rainbow();
+	init_piano();
+}
+
+function circle_mousemove(e) {
+	hover_element = e.target;
+	hover(hover_element);
+}
+
+function circle_mouseout(e) {
+	unhover();
+}
+
+function find_elem(i, j) {
+	const svg = document.getElementById('svg');
+	let result = [];
+	for (let circle of svg.getElementsByTagName('path')) {
+		if (parseInt(circle.dataset.i) === i && parseInt(circle.dataset.j) === j) {
+			return circle;
+		}
+	}
+	return result;
+}
+
+function find_piano(pitch) {
+	const white_notes = document.getElementById('white_notes');
+	const black_notes = document.getElementById('black_notes');
+	for (let rect of white_notes.getElementsByTagName('rect')) {
+		if (parseInt(rect.dataset.pitch) === pitch) {
+			return rect;
+		}
+	}
+	for (let rect of black_notes.getElementsByTagName('rect')) {
+		if (parseInt(rect.dataset.pitch) === pitch) {
+			return rect;
+		}
+	}
+	return undefined;
+}
+
+function unhover() {
+	for (let circle of hover_circles) {
+		circle.classList.remove('active');
+	}
+	for (let rect of hover_pianos) {
+		rect.classList.remove('active');
+	}
+	hover_circles = [];
+	hover_pianos = [];
+}
+
+function hover(hover_circle, include_seventh) {
+	unhover();
+	hover_circles = [];
+
+	let i = parseInt(hover_circle.dataset.i);
+	let j = parseInt(hover_circle.dataset.j);
+	let pitch_class = parseInt(hover_circle.dataset.pitch_class);
+
+	hover_circles = [hover_circle];
+	hover_circle.classList.add('active');
+
+	hover_pianos = [];
+	const pitch = choose_octave(pitch_class);
+	const rect = find_piano(pitch);
+	if (rect !== undefined) {
+		hover_pianos.push(rect);
+		rect.classList.add('active');
+	}
+}
+
+function click_piano(e) {
+	const pitch = parseInt(e.target.dataset.pitch);
+	play_note(pitch);
+}
+
+function init_piano() {
+	const white = [true,false,true,false,true,true,false,true,false,true,false,true];
+	const white_notes = document.getElementById('white_notes');
+	const black_notes = document.getElementById('black_notes');
+	let x = 120;
+	const y = 450;
+	const w = 20;
+	const h = 90;
+	for (let pitch = 0; pitch <= 48; pitch++) {
+		const pitch_class = mod(pitch, 12);
+		let rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+		rect.dataset.pitch = pitch;
+		rect.onclick = click_piano;
+		if (white[pitch_class]) {
+			rect.setAttribute('x', x);
+			rect.setAttribute('y', y);
+			rect.setAttribute('width', w);
+			rect.setAttribute('height', h);
+			rect.setAttribute('stroke', '#000');
+			rect.classList.add('white_note');
+			white_notes.appendChild(rect);
+			x += w;
+		} else {
+			rect.setAttribute('x', x - w * 0.3);
+			rect.setAttribute('y', y);
+			rect.setAttribute('width', w * 0.6);
+			rect.setAttribute('height', h * 0.6);
+			rect.setAttribute('stroke', '#000');
+			rect.classList.add('black_note');
+			black_notes.appendChild(rect);
+		}
+	}
+}
+
+window.onload = init;
+	</script>
+<style>
+.scale {
+	fill: #fcc;
+}
+.near {
+	fill: #fee;
+}
+.far {
+	fill: #fff;
+}
+
+.white_note {
+	fill: #fff;
+}
+.black_note {
+	fill: #000;
+}
+
+.active {
+	fill: #cdf;
+}
+</style>
+	<body>
+		<svg id="svg" width="1000" height="600">
+			<g id="white_notes"/>
+			<g id="black_notes"/>
+		</svg>
+	</body>
+</html>
