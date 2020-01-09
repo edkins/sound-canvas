@@ -13,6 +13,8 @@ let gains = undefined;
 
 let hover_element = undefined;
 let hover_shift = undefined;
+let hover_voicing_time = undefined;
+let hover_voicing_pitch = undefined;
 
 let initialized = false;
 
@@ -97,21 +99,31 @@ function play_music(notes) {
 }
 
 function init() {
-	redraw();
+	init_audio();
+	replace();
 	initialized = true;
+	redraw();
 }
 
-function redraw() {
+// This is separate from redraw. replace() handles the things which can generate mouse events,
+// and redraw() just recolours things or replaces elements which don't generate mouse events.
+// The problem is that removing and replacing something while the mouse is over it will generate
+// a mouseout event, which can cause it to keep looping.
+function replace() {
 	const svg = document.getElementById('svg');
 	while (svg.lastChild) {
 		svg.removeChild(svg.lastChild);
 	}
 
-	let g = document.createElementNS('http://www.w3.org/2000/svg','g');
-	g.setAttribute('id','columns');
-	svg.appendChild(g);
-	draw_scale();
-	draw_column();
+	place_scale();
+	place_columns();
+	place_voicings();
+	redraw();
+}
+
+function redraw() {
+	draw_columns();
+	draw_voicings();
 }
 
 function mod(a,b) {
@@ -138,7 +150,7 @@ function column_mousedown(e) {
 	const chord = [pitch_class + 12, pitch_class + (major ? 4 : 3) + 12, pitch_class + 7 + 12];
 
 	set_event_chord(time, chord, major, pitch_class);
-	redraw();
+	replace();
 	play_from(time);
 }
 
@@ -163,12 +175,9 @@ function set_event_chord(time, chord, major, root) {
 	}
 }
 
-function draw_column() {
-	const svg = document.getElementById('columns');
-	let min_time = max_time;
-	if (events.length !== 0) {
-		min_time = events[0].time - 1;
-	}
+function draw_columns() {
+	if (!initialized) return;
+	const svg = document.getElementById('svg');
 
 	let hover_chord = [];
 	let hover_major = false;
@@ -180,23 +189,46 @@ function draw_column() {
 		if (hover_shift) hover_major = !hover_major;
 		hover_chord = [pitch_class, mod(pitch_class + (hover_major ? 4 : 3), 12), mod(pitch_class + 7, 12)];
 	}
-	for (let time = min_time; time <= max_time; time++) {
-		let chord = [];
-		let major = undefined;
-		let root = undefined;
-		if (time === hover_time) {
-			chord = hover_chord;
-			major = hover_major;
-			// leave root undefined
-		} else {
-			let event = find_event(time);
-			if (event !== undefined) {
-				chord = event.chord_class;
-				major = event.major;
-				root = event.root;
+
+	for (const rect of svg.getElementsByTagName('rect')) {
+		if (rect.dataset.type === 'column') {
+			const pitch_class = parseInt(rect.dataset.pitch_class);
+			const time = parseInt(rect.dataset.time);
+			const highlight = scale.indexOf(pitch_class) !== -1;
+
+			let chord = [];
+			let major = undefined;
+			let root = undefined;
+			if (time === hover_time) {
+				chord = hover_chord;
+				major = hover_major;
+				root = hover_chord[0];
+			} else {
+				let event = find_event(time);
+				if (event !== undefined) {
+					chord = event.chord_class;
+					major = event.major;
+					root = event.root;
+				}
+			}
+
+			if (chord.indexOf(pitch_class) !== -1) {
+				rect.setAttribute('fill', choose_colour(major, pitch_class === root));
+			} else {
+				rect.setAttribute('fill', choose_background_colour(time === hover_time, highlight));
 			}
 		}
+	}
+}
 
+function place_columns() {
+	const svg = document.getElementById('svg');
+	let min_time = max_time;
+	if (events.length !== 0) {
+		min_time = events[0].time - 1;
+	}
+
+	for (let time = min_time; time <= max_time; time++) {
 		for (let i = 0; i < 12; i++) {
 			const pitch_class = mod(i * 7 + 3, 12);
 			const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -205,18 +237,10 @@ function draw_column() {
 			rect.setAttribute('width', 40);
 			rect.setAttribute('height', 20);
 			rect.setAttribute('stroke', '#000');
-			if (root === pitch_class) {
-				rect.setAttribute('fill', major ? '#f00' : '#00f');
-			} else if (chord.indexOf(pitch_class) !== -1) {
-				rect.setAttribute('fill', major ? '#fcc' : '#ccf');
-			} else if (scale.indexOf(pitch_class) !== -1) {
-				rect.setAttribute('fill', '#fff');
-			} else {
-				rect.setAttribute('fill', '#ddd');
-			}
 			rect.dataset.pitch_class = pitch_class;
 			rect.dataset.major = (i <= 4);
 			rect.dataset.time = time;
+			rect.dataset.type = 'column';
 			rect.onmouseover = column_mouseover;
 			rect.onmouseout = column_mouseout;
 			rect.onmousedown = column_mousedown;
@@ -225,7 +249,134 @@ function draw_column() {
 	}
 }
 
-function draw_scale() {
+function voicing_mousemove(e) {
+	hover_voicing_time = parseInt(e.target.dataset.time);
+
+	const svg = document.getElementById('svg');
+	const dim = svg.getBoundingClientRect();
+	const y = e.clientY - dim.top;
+	hover_voicing_pitch = (480 - y) / 5;
+	redraw();
+}
+
+function voicing_mouseout(e) {
+	hover_voicing_time = undefined;
+	hover_voicing_pitch = undefined;
+	redraw();
+}
+
+function voicing_mousedown(e) {
+	const svg = document.getElementById('svg');
+	const dim = svg.getBoundingClientRect();
+	const y = e.clientY - dim.top;
+	const time = parseInt(e.target.dataset.time);
+	const event = find_event(time);
+	if (event !== undefined) {
+		const voicing_pitch = (480 - y) / 5;
+		const chord = voice_chord(event.chord_class, voicing_pitch);
+		set_event_chord(time, chord, event.major, event.root);
+		replace();
+		play_from(time);
+	}
+}
+
+function voice_note(pitch_class, target_pitch) {
+	let pitch = pitch_class;
+	while (pitch < target_pitch) pitch += 12;
+	while (pitch > target_pitch) pitch -= 12;
+	return pitch;
+}
+
+function voice_chord(chord_class, target_pitch) {
+	let chord = chord_class.map(pc => voice_note(pc, target_pitch));
+	chord.sort();
+	return chord;
+}
+
+function draw_voicings() {
+	if (!initialized) return;
+	if (events.length === 0) return;
+	const min_time = events[0].time;
+
+	const svg = document.getElementById('voicings');
+	while (svg.lastChild) {
+		svg.removeChild(svg.lastChild);
+	}
+
+	for (let time = min_time; time <= max_time; time++) {
+		const x = 60 + time * 40;
+
+		let chord = [];
+		let major = false;
+		let root = undefined;
+		const event = find_event(time);
+		if (event !== undefined) {
+			major = event.major;
+			root = event.root;
+			if (time === hover_voicing_time) {
+				if (hover_voicing_pitch !== undefined) {
+					chord = voice_chord(event.chord_class, hover_voicing_pitch);
+				}
+			} else {
+				chord = event.chord;
+			}
+		}
+		for (let pitch of chord) {
+			const pitch_class = mod(pitch, 12);
+			const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+			circle.setAttribute('cx', x + 20);
+			circle.setAttribute('cy', 480 - pitch * 5);
+			circle.setAttribute('r', 7);
+			circle.setAttribute('stroke', '#000');
+			circle.setAttribute('fill', choose_colour(major, pitch_class === root));
+			circle.setAttribute('pointer-events','none');
+			svg.appendChild(circle);
+		}
+	}
+}
+
+function place_voicings() {
+	if (events.length === 0) return;
+	const min_time = events[0].time;
+	for (let time = min_time; time <= max_time; time++) {
+		const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+		const x = 60 + time * 40;
+		rect.setAttribute('x', x);
+		rect.setAttribute('y', 280);
+		rect.setAttribute('width', 40);
+		rect.setAttribute('height', 200);
+		rect.setAttribute('stroke', '#000');
+		rect.setAttribute('fill', choose_background_colour(time === hover_voicing_time, true));
+		rect.dataset.time = time;
+		rect.onmouseover = voicing_mousemove;
+		rect.onmousemove = voicing_mousemove;
+		rect.onmouseout = voicing_mouseout;
+		rect.onmousedown = voicing_mousedown;
+
+		svg.appendChild(rect);
+	}
+	const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+	g.setAttribute('id', 'voicings');
+	svg.appendChild(g);
+}
+
+function choose_colour(major, is_root) {
+	if (is_root) {
+		return major ? '#f00' : '#00f';
+	} else {
+		return major ? '#fcc' : '#ccf';
+	}
+}
+
+function choose_background_colour(is_time, highlight) {
+	if (is_time) {
+		return highlight ? '#ffe' : '#ddb';
+	} else {
+		return highlight ? '#fff' : '#ccc';
+	}
+}
+
+function place_scale() {
 	const svg = document.getElementById('svg');
 	const names_sharp = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 	const names_flat  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
