@@ -1,0 +1,279 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	<script>
+'use strict';
+
+const tempo = 2.0;
+const c_hz = 440 * Math.pow(2, -9/12) / 2;
+const scale = [0, 2, 4, 5, 7, 9, 11];
+let ctx = undefined;
+let oscs = undefined;
+let gains = undefined;
+
+let hover_element = undefined;
+let hover_shift = undefined;
+
+let initialized = false;
+
+const max_time = 16;
+const events = [];
+
+function init_audio() {
+	if (ctx === undefined) {
+		ctx = new AudioContext();
+		oscs = [];
+		gains = [];
+	}
+}
+
+function distinct_pitches(notes) {
+	let result = [];
+	for (let note of notes) {
+		if (result.indexOf(note.pitch) === -1) {
+			result.push(note.pitch);
+		}
+	}
+	return result;
+}
+
+function play_from(min_time) {
+	let notes = [];
+	for (let time = min_time; time <= max_time; time++){
+		const event = find_event(time);
+		if (event !== undefined) {
+			for (let pitch of event.chord) {
+				notes.push({pitch,time:time - min_time});
+			}
+		}
+	}
+	play_music(notes);
+}
+
+function play_music(notes) {
+	const pitches = distinct_pitches(notes);
+
+	init_audio();
+
+	const start_time = ctx.currentTime;
+
+	for (let i = 0; i < oscs.length; i++) {
+		let pitch = 0;
+		if (i < pitches.length) {
+			pitch = pitches[i];
+		}
+
+		const freq = c_hz * Math.pow(2, pitch / 12);
+
+		gains[i].gain.cancelScheduledValues(start_time);
+		gains[i].gain.setValueAtTime(0, start_time);
+		oscs[i].frequency.setValueAtTime(freq, start_time);
+	}
+
+	while (oscs.length < pitches.length) {
+		const pitch = pitches[oscs.length];
+		const freq = c_hz * Math.pow(2, pitch / 12);
+
+		const osc = ctx.createOscillator();
+		osc.frequency.setValueAtTime(freq, start_time);
+		osc.start();
+
+		const gain = ctx.createGain();
+		gain.gain.setValueAtTime(0, start_time);
+
+		osc.connect(gain);
+		gain.connect(ctx.destination);
+
+		oscs.push(osc);
+		gains.push(gain);
+	}
+
+	for (let note of notes) {
+		const i = pitches.indexOf(note.pitch);
+		const t = start_time + note.time / tempo;
+		gains[i].gain.setValueAtTime(0.3, t);
+		gains[i].gain.linearRampToValueAtTime(0, t + 0.5);
+	}
+}
+
+function init() {
+	redraw();
+	initialized = true;
+}
+
+function redraw() {
+	const svg = document.getElementById('svg');
+	while (svg.lastChild) {
+		svg.removeChild(svg.lastChild);
+	}
+
+	let g = document.createElementNS('http://www.w3.org/2000/svg','g');
+	g.setAttribute('id','columns');
+	svg.appendChild(g);
+	draw_scale();
+	draw_column();
+}
+
+function mod(a,b) {
+	return ((a % b) + b) % b;
+}
+
+function column_mouseout(e) {
+	hover_element = undefined;
+	hover_shift = e.shiftKey;
+	redraw();
+}
+
+function column_mouseover(e) {
+	hover_element = e.target;
+	hover_shift = e.shiftKey;
+	redraw();
+}
+
+function column_mousedown(e) {
+	const pitch_class = parseInt(e.target.dataset.pitch_class);
+	const time = parseInt(e.target.dataset.time);
+	let major = e.target.dataset.major === 'true';
+	if (e.shiftKey) major = !major;
+	const chord = [pitch_class + 12, pitch_class + (major ? 4 : 3) + 12, pitch_class + 7 + 12];
+
+	set_event_chord(time, chord, major, pitch_class);
+	redraw();
+	play_from(time);
+}
+
+function find_event(time) {
+	for (let event of events) {
+		if (event.time === time) {
+			return event;
+		}
+	}
+}
+
+function set_event_chord(time, chord, major, root) {
+	const event = find_event(time);
+	const chord_class = chord.map(p => mod(p,12));
+	if (event !== undefined) {
+		event.chord = chord;
+		event.chord_class = chord_class;
+		event.major = major;
+		event.root = root;
+	} else {
+		events.splice(0, 0, {time,chord,chord_class,major,root});
+	}
+}
+
+function draw_column() {
+	const svg = document.getElementById('columns');
+	let min_time = max_time;
+	if (events.length !== 0) {
+		min_time = events[0].time - 1;
+	}
+
+	let hover_chord = [];
+	let hover_major = false;
+	let hover_time = undefined;
+	if (hover_element !== undefined) {
+		const pitch_class = parseInt(hover_element.dataset.pitch_class);
+		hover_time = parseInt(hover_element.dataset.time);
+		hover_major = hover_element.dataset.major === 'true';
+		if (hover_shift) hover_major = !hover_major;
+		hover_chord = [pitch_class, mod(pitch_class + (hover_major ? 4 : 3), 12), mod(pitch_class + 7, 12)];
+	}
+	for (let time = min_time; time <= max_time; time++) {
+		let chord = [];
+		let major = undefined;
+		let root = undefined;
+		if (time === hover_time) {
+			chord = hover_chord;
+			major = hover_major;
+			// leave root undefined
+		} else {
+			let event = find_event(time);
+			if (event !== undefined) {
+				chord = event.chord_class;
+				major = event.major;
+				root = event.root;
+			}
+		}
+
+		for (let i = 0; i < 12; i++) {
+			const pitch_class = mod(i * 7 + 3, 12);
+			const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+			rect.setAttribute('x', 60 + time * 40);
+			rect.setAttribute('y', i * 20 + 25);
+			rect.setAttribute('width', 40);
+			rect.setAttribute('height', 20);
+			rect.setAttribute('stroke', '#000');
+			if (root === pitch_class) {
+				rect.setAttribute('fill', major ? '#f00' : '#00f');
+			} else if (chord.indexOf(pitch_class) !== -1) {
+				rect.setAttribute('fill', major ? '#fcc' : '#ccf');
+			} else if (scale.indexOf(pitch_class) !== -1) {
+				rect.setAttribute('fill', '#fff');
+			} else {
+				rect.setAttribute('fill', '#ddd');
+			}
+			rect.dataset.pitch_class = pitch_class;
+			rect.dataset.major = (i <= 4);
+			rect.dataset.time = time;
+			rect.onmouseover = column_mouseover;
+			rect.onmouseout = column_mouseout;
+			rect.onmousedown = column_mousedown;
+			svg.appendChild(rect);
+		}
+	}
+}
+
+function draw_scale() {
+	const svg = document.getElementById('svg');
+	const names_sharp = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+	const names_flat  = ['C','D♭','D','E♭','E','F','G♭','G','A♭','A','B♭','B'];
+	let use_sharp = false;
+	let min_time = max_time;
+	if (events.length !== 0) {
+		min_time = events[0].time - 1;
+	}
+	for (let i = 0; i < 12; i++) {
+		const pitch_class = mod(i * 7 + 3, 12);
+		let label = names_flat[pitch_class];
+		if (use_sharp) {
+			label = names_sharp[pitch_class];
+		} else if (label === names_sharp[pitch_class]) {
+			use_sharp = true;
+		}
+		const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', 25 + min_time * 40);
+		text.setAttribute('y', i * 20 + 40);
+		text.setAttribute('pointer-events','none');
+		text.textContent = label;
+		svg.appendChild(text);
+	}
+}
+
+function body_keydown(e) {
+	if (initialized) {
+		if (e.key === 'Shift') {
+			hover_shift = true;
+			redraw();
+		}
+	}
+}
+
+function body_keyup(e) {
+	if (initialized) {
+		if (e.key === 'Shift') {
+			hover_shift = false;
+			redraw();
+		}
+	}
+}
+
+window.onload = init;
+	</script>
+	</head>
+	<body onkeydown="body_keydown(event)" onkeyup="body_keyup(event)">
+		<svg id="svg" width="1000" height="600" style="background:#eee">
+		</svg>
+	</body>
+</html>
