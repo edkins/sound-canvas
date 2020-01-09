@@ -17,6 +17,10 @@ let hover_voicing_time = undefined;
 let hover_voicing_pitch = undefined;
 
 let initialized = false;
+let play_start_time = undefined;
+let play_end_time = undefined;
+let play_start_t = undefined;
+let play_end_t = undefined;
 
 const max_time = 16;
 const events = [];
@@ -39,6 +43,39 @@ function distinct_pitches(notes) {
 	return result;
 }
 
+function place_time_marker() {
+	const svg = document.getElementById('svg');
+	if (play_start_time !== undefined) {
+		const fraction = (ctx.currentTime - play_start_t) / (play_end_t - play_start_t);
+		const current_time = play_start_time + (play_end_time - play_start_time) * fraction;
+		const x0 = 60 + current_time * 40;
+		const x1 = 60 + play_end_time * 40;
+		const y = 35;
+		const dur = play_end_t - ctx.currentTime;
+		const svg_time = svg.getCurrentTime();
+
+		const polygon = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+		polygon.setAttribute('points',`-5,-25 5,-25 0,-10`);
+		polygon.setAttribute('fill', '#0c0');
+		polygon.setAttribute('stroke', '#000');
+
+		const animate = document.createElementNS('http://www.w3.org/2000/svg','animateMotion');
+		animate.setAttribute('begin', svg_time);
+		animate.setAttribute('dur', `${dur}s`);
+		animate.setAttribute('repeatCount', 1);
+		animate.setAttribute('path', `M ${x0} ${y} L ${x1} ${y}`);
+
+		polygon.appendChild(animate);
+		svg.appendChild(polygon);
+	}
+}
+
+function play_from_start() {
+	if (events.length > 0) {
+		play_from(events[0].time);
+	}
+}
+
 function play_from(min_time) {
 	let notes = [];
 	for (let time = min_time; time <= max_time; time++){
@@ -49,6 +86,8 @@ function play_from(min_time) {
 			}
 		}
 	}
+	play_start_time = min_time;
+	play_end_time = max_time + 1;
 	play_music(notes);
 }
 
@@ -57,7 +96,7 @@ function play_music(notes) {
 
 	init_audio();
 
-	const start_time = ctx.currentTime;
+	play_start_t = ctx.currentTime;
 
 	for (let i = 0; i < oscs.length; i++) {
 		let pitch = 0;
@@ -67,9 +106,9 @@ function play_music(notes) {
 
 		const freq = c_hz * Math.pow(2, pitch / 12);
 
-		gains[i].gain.cancelScheduledValues(start_time);
-		gains[i].gain.setValueAtTime(0, start_time);
-		oscs[i].frequency.setValueAtTime(freq, start_time);
+		gains[i].gain.cancelScheduledValues(play_start_t);
+		gains[i].gain.setValueAtTime(0, play_start_t);
+		oscs[i].frequency.setValueAtTime(freq, play_start_t);
 	}
 
 	while (oscs.length < pitches.length) {
@@ -77,11 +116,11 @@ function play_music(notes) {
 		const freq = c_hz * Math.pow(2, pitch / 12);
 
 		const osc = ctx.createOscillator();
-		osc.frequency.setValueAtTime(freq, start_time);
+		osc.frequency.setValueAtTime(freq, play_start_t);
 		osc.start();
 
 		const gain = ctx.createGain();
-		gain.gain.setValueAtTime(0, start_time);
+		gain.gain.setValueAtTime(0, play_start_t);
 
 		osc.connect(gain);
 		gain.connect(ctx.destination);
@@ -92,9 +131,10 @@ function play_music(notes) {
 
 	for (let note of notes) {
 		const i = pitches.indexOf(note.pitch);
-		const t = start_time + note.time / tempo;
+		const t = play_start_t + note.time / tempo;
 		gains[i].gain.setValueAtTime(0.3, t);
 		gains[i].gain.linearRampToValueAtTime(0, t + 0.5);
+		play_end_t = t + 1 / tempo;
 	}
 }
 
@@ -118,7 +158,20 @@ function replace() {
 	place_scale();
 	place_columns();
 	place_voicings();
+	place_help();
+	place_time_marker();
 	redraw();
+}
+
+function place_help() {
+	const svg = document.getElementById('svg');
+	if (events.length > 0) {
+		const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+		text.setAttribute('x', 0);
+		text.setAttribute('y', 20);
+		text.textContent = 'Press P to play';
+		svg.appendChild(text);
+	}
 }
 
 function redraw() {
@@ -150,8 +203,8 @@ function column_mousedown(e) {
 	const chord = [pitch_class + 12, pitch_class + (major ? 4 : 3) + 12, pitch_class + 7 + 12];
 
 	set_event_chord(time, chord, major, pitch_class);
-	replace();
 	play_from(time);
+	replace();
 }
 
 function find_event(time) {
@@ -275,8 +328,8 @@ function voicing_mousedown(e) {
 		const voicing_pitch = (480 - y) / 5;
 		const chord = voice_chord(event.chord_class, voicing_pitch);
 		set_event_chord(time, chord, event.major, event.root);
-		replace();
 		play_from(time);
+		replace();
 	}
 }
 
@@ -298,9 +351,9 @@ function draw_voicings() {
 	if (events.length === 0) return;
 	const min_time = events[0].time;
 
-	const svg = document.getElementById('voicings');
-	while (svg.lastChild) {
-		svg.removeChild(svg.lastChild);
+	const g = document.getElementById('voicings');
+	while (g.lastChild) {
+		g.removeChild(g.lastChild);
 	}
 
 	for (let time = min_time; time <= max_time; time++) {
@@ -330,7 +383,15 @@ function draw_voicings() {
 			circle.setAttribute('stroke', '#000');
 			circle.setAttribute('fill', choose_colour(major, pitch_class === root));
 			circle.setAttribute('pointer-events','none');
-			svg.appendChild(circle);
+			g.appendChild(circle);
+		}
+	}
+
+	const svg = document.getElementById('svg');
+	for (const rect of svg.getElementsByTagName('rect')) {
+		if (rect.dataset.type === 'voicing') {
+			const time = parseInt(rect.dataset.time);
+			rect.setAttribute('fill', choose_background_colour(time === hover_voicing_time, true));
 		}
 	}
 }
@@ -346,7 +407,7 @@ function place_voicings() {
 		rect.setAttribute('width', 40);
 		rect.setAttribute('height', 200);
 		rect.setAttribute('stroke', '#000');
-		rect.setAttribute('fill', choose_background_colour(time === hover_voicing_time, true));
+		rect.dataset.type = 'voicing';
 		rect.dataset.time = time;
 		rect.onmouseover = voicing_mousemove;
 		rect.onmousemove = voicing_mousemove;
@@ -407,6 +468,9 @@ function body_keydown(e) {
 		if (e.key === 'Shift') {
 			hover_shift = true;
 			redraw();
+		} else if (e.key === 'p') {
+			play_from_start();
+			replace();
 		}
 	}
 }
