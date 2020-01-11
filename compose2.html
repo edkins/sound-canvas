@@ -81,8 +81,9 @@ function play_from(min_time) {
 	for (let time = min_time; time <= max_time; time++){
 		const event = find_event(time);
 		if (event !== undefined) {
+			let volume = 0.3;
 			for (let pitch of event.chord) {
-				notes.push({pitch,time:time - min_time});
+				notes.push({pitch,time:time - min_time,volume});
 			}
 		}
 	}
@@ -132,7 +133,7 @@ function play_music(notes) {
 	for (let note of notes) {
 		const i = pitches.indexOf(note.pitch);
 		const t = play_start_t + note.time / tempo;
-		gains[i].gain.setValueAtTime(0.3, t);
+		gains[i].gain.setValueAtTime(note.volume, t);
 		gains[i].gain.linearRampToValueAtTime(0, t + 0.5);
 		play_end_t = t + 1 / tempo;
 	}
