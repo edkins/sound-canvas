@@ -1,0 +1,42 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<script>
+'use strict';
+
+let ctx = undefined;
+
+function play_sounds() {
+	if (ctx !== undefined) {
+		ctx.close();
+	}
+
+	ctx = new AudioContext();
+
+	let osc = ctx.createOscillator();
+	let gain = ctx.createGain();
+	osc.frequency.setValueAtTime(440, ctx.currentTime);
+	osc.start();
+	gain.gain.setValueAtTime(0, ctx.currentTime);
+	osc.connect(gain);
+	gain.connect(ctx.destination);
+
+	osc.detune.setValueAtTime(300, ctx.currentTime);
+	gain.gain.setValueAtTime(1, ctx.currentTime);
+	gain.gain.setValueAtTime(0, ctx.currentTime + 0.5);
+
+	osc.detune.setValueAtTime(700, ctx.currentTime + 1);
+	gain.gain.setValueAtTime(1, ctx.currentTime + 1);
+	gain.gain.setValueAtTime(0, ctx.currentTime + 2);
+
+	osc.detune.setValueAtTime(1000, ctx.currentTime + 3);
+	gain.gain.setValueAtTime(1, ctx.currentTime + 3);
+	gain.gain.setValueAtTime(0, ctx.currentTime + 3.25);
+}
+	</script>
+	<body>
+		<input type="button" onclick="play_sounds()" value="Play sounds">
+	</body>
+</html>
+
