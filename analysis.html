@@ -1,0 +1,110 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+<script>
+'use strict';
+
+let ctx = undefined;
+let an = undefined;
+let timer = undefined;
+let floats = undefined;
+let time_floats = undefined;
+let image_data = undefined;
+let x = 0;
+
+function show_analysis() {
+	let c = document.getElementById('canvas').getContext('2d');
+
+	an.getFloatFrequencyData(floats);
+
+	for (let i = 0; i < an.frequencyBinCount; i++) {
+		//let v = 255 * Math.pow(1.01, floats[i]);
+		let v = 255 + floats[i];
+		image_data.data[4*i] = v;
+		image_data.data[4*i+1] = v;
+		image_data.data[4*i+2] = v;
+		image_data.data[4*i+3] = 255;
+	}
+
+	for (let i = 0; i < 10; i++) {
+		c.putImageData(image_data, x, 0);
+		x++;
+	}
+
+	c = document.getElementById('canvas2').getContext('2d');
+	c.fillStyle = '#fff';
+	c.fillRect(0, 0, 800, 512);
+	c.fillStyle = '#f00';
+	an.getFloatTimeDomainData(time_floats);
+	for (let i = 0; i < an.frequencyBinCount; i++) {
+		c.fillRect(i, time_floats[i] * 64 + 256, 1, 1);
+	}
+}
+
+function distortion_curve(pow, amount) {
+	let curve = new Float32Array(101);
+	for (let i = 0; i < 101; i++) {
+		let x = i / 50 - 0.5;
+		if (x > 0) {
+			curve[i] = x - amount * Math.pow(x, pow);
+		} else {
+			curve[i] = x + amount * Math.pow(-x, pow);
+		}
+	}
+	return curve;
+}
+
+function analyse(pow, amount) {
+	if (timer !== undefined) {
+		window.clearInterval(timer);
+	}
+	if (ctx !== undefined) {
+		ctx.close();
+	}
+
+	ctx = new AudioContext();
+
+	an = ctx.createAnalyser();
+	an.fftSize = 4096;
+	an.smoothingTimeConstant = 0;
+	floats = new Float32Array(an.frequencyBinCount);
+	time_floats = new Float32Array(an.fftSize);
+	image_data = new ImageData(1, an.frequencyBinCount);
+
+	let dist = ctx.createWaveShaper();
+	dist.curve = distortion_curve(pow, amount);
+
+	let osc = ctx.createOscillator();
+	let gain = ctx.createGain();
+	gain.gain.setValueAtTime(1, ctx.currentTime);
+	gain.gain.exponentialRampToValueAtTime(0.1, ctx.currentTime + 1);
+	gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 2);
+	osc.type = 'sine';
+	osc.frequency.setValueAtTime(440, ctx.currentTime);
+	osc.detune.setValueAtTime(0, ctx.currentTime);
+	osc.start();
+	osc.connect(gain);
+	gain.connect(dist);
+	dist.connect(an);
+	an.connect(ctx.destination);
+
+	x = 0;
+	timer = window.setInterval(show_analysis, 100);
+}
+
+function canvas_mousedown(e) {
+	const dim = document.getElementById('canvas').getBoundingClientRect();
+	const x = e.clientX - dim.left;
+	const y = e.clientY - dim.top;
+	let pow = y / 50;
+	let amount = x / 800;
+	analyse(pow, amount);
+}
+
+</script>
+	</head>
+	<body>
+		<canvas width="800" height="512" id="canvas" style="border:solid black 1px" onmousedown="canvas_mousedown(event)"></canvas>
+		<canvas width="800" height="512" id="canvas2" style="border:solid black 1px"></canvas>
+	</body>
+</html>
