@@ -59,6 +59,8 @@ const instruments = [
 ];
 const numSquares = 64;
 const tune = [];
+let ctx = undefined;
+let oscillators = [];
 
 function empty(el) {
 	while (el.lastChild) {
@@ -129,7 +131,6 @@ function clickSquare(ev) {
 		if (item.instrument === instrument && item.note === note && item.time === time) {
 			ev.target.classList.remove('active');
 			tune.splice(i,1);
-			console.log(tune);
 			return;
 		}
 		if (item.time > time) {
@@ -139,7 +140,6 @@ function clickSquare(ev) {
 	}
 	tune.splice(insertion_point, 0, {instrument, note, time});
 	ev.target.classList.add('active');
-	console.log(tune);
 }
 
 function findInst(instrument) {
@@ -220,6 +220,7 @@ function populateTable() {
 							td.dataset.instrument = instrument.name;
 							td.dataset.note = note;
 							td.dataset.time = time;
+							td.id = `${instrument.name}-${note}-${time}`;
 							td.onclick = clickSquare;
 							if (i % 4 === 0) {
 								td.classList.add('beat');
@@ -231,6 +232,64 @@ function populateTable() {
 				}
 			}
 		}
+	}
+
+	for (const item of tune) {
+		const id = `${item.instrument}-${item.note}-${item.time}`;
+		const el = document.getElementById(id);
+		el.classList.add('active');
+	}
+}
+
+function play() {
+	resetAudio();
+	const startTime = ctx.currentTime + 0.05;
+	for (const item of tune) {
+		const freq = 440 * Math.pow(2, (item.note-33) / 12);
+		const time = startTime + item.time * 0.125;
+		scheduleNote(item.instrument, freq, time);
+	}
+}
+
+function resetAudio() {
+	if (ctx !== undefined) {
+		ctx.close();
+		oscillators = [];
+	}
+	ctx = new AudioContext();
+}
+
+function grabOscillator(type, startTime, endTime) {
+	for (let osc of oscillators) {
+		if (osc.type === type && osc.endTime <= startTime) {
+			osc.endTime = endTime;
+			return osc;
+		}
+	}
+	const oscNode = ctx.createOscillator();
+	const gainNode = ctx.createGain();
+	oscNode.type = type;
+	oscNode.start();
+	oscNode.connect(gainNode);
+	gainNode.gain.setValueAtTime(0, ctx.currentTime);
+	gainNode.connect(ctx.destination);
+	const osc = {type, endTime, oscNode, gainNode};
+	oscillators.push(osc);
+	return osc;
+}
+
+function scheduleNote(instrument, freq, time) {
+	if (instrument === 'piano') {
+		console.log(freq, time);
+		/*let osc = grabOscillator('sine', time, time+1);
+		osc.oscNode.frequency.setValueAtTime(freq, time);
+		osc.gainNode.gain.setValueAtTime(0.1, time);
+		osc.gainNode.gain.linearRampToValueAtTime(0, time+1);*/
+		
+		let osc = grabOscillator('triangle', time, time+1);
+		osc.oscNode.frequency.setValueAtTime(freq, time);
+		osc.gainNode.gain.setValueAtTime(0.1, time);
+		osc.gainNode.gain.linearRampToValueAtTime(0, time+1);
 	}
 }
 
@@ -300,6 +359,8 @@ window.onload = load;
 	<div id="instruments">
 	</div>
 	<div>
+		<button onclick="play()">Play</button>
+		<br>
 		<table id="table">
 		</table>
 	</div>
