@@ -54,7 +54,7 @@ const instruments = [
 		name: 'piano'
 	},
 	{
-		name: 'strings'
+		name: 'alt'
 	}
 ];
 const numSquares = 64;
@@ -280,16 +280,16 @@ function grabOscillator(type, startTime, endTime) {
 
 function scheduleNote(instrument, freq, time) {
 	if (instrument === 'piano') {
-		console.log(freq, time);
-		/*let osc = grabOscillator('sine', time, time+1);
+		let osc = grabOscillator('triangle', time, time+.5);
 		osc.oscNode.frequency.setValueAtTime(freq, time);
 		osc.gainNode.gain.setValueAtTime(0.1, time);
-		osc.gainNode.gain.linearRampToValueAtTime(0, time+1);*/
-		
-		let osc = grabOscillator('triangle', time, time+1);
+		osc.gainNode.gain.linearRampToValueAtTime(0, time+.5);
+	} else if (instrument === 'alt') {
+		let osc = grabOscillator('triangle', time, time+.5);
 		osc.oscNode.frequency.setValueAtTime(freq, time);
-		osc.gainNode.gain.setValueAtTime(0.1, time);
-		osc.gainNode.gain.linearRampToValueAtTime(0, time+1);
+		osc.gainNode.gain.setValueAtTime(0, time);
+		osc.gainNode.gain.setValueAtTime(0.1, time+.1);
+		osc.gainNode.gain.linearRampToValueAtTime(0, time+.5);
 	}
 }
 
